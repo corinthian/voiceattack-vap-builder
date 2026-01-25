@@ -1,0 +1,88 @@
+{
+  "name": "Simple Example Profile",
+  "commands": [
+    {"_section": "=== KEYBOARD ==="},
+    {
+      "trigger": "[press;] alpha",
+      "key": "a",
+      "category": "keyboard"
+    },
+    {
+      "trigger": "[press;] bravo",
+      "key": "b",
+      "category": "keyboard"
+    },
+    {
+      "trigger": "press escape",
+      "key": "escape",
+      "category": "keyboard"
+    },
+    {
+      "trigger": "press enter",
+      "key": "enter",
+      "category": "keyboard"
+    },
+
+    {"_section": "=== MOUSE ==="},
+    {
+      "trigger": "left click",
+      "mouse": "left_click",
+      "category": "mouse"
+    },
+    {
+      "trigger": "right click",
+      "mouse": "right_click",
+      "category": "mouse"
+    },
+    {
+      "trigger": "double click",
+      "mouse": "double_click",
+      "category": "mouse"
+    },
+    {
+      "trigger": "scroll up",
+      "actions": [
+        {"type": "MouseAction", "action": "scroll_up", "scroll_clicks": 3}
+      ],
+      "category": "mouse"
+    },
+
+    {"_section": "=== SHORTCUTS ==="},
+    {
+      "trigger": "copy",
+      "actions": [
+        {"type": "KeyDown", "keys": ["ctrl"]},
+        {"type": "PressKey", "keys": ["c"], "duration": 0.1},
+        {"type": "KeyUp", "keys": ["ctrl"]}
+      ],
+      "category": "keyboard"
+    },
+    {
+      "trigger": "paste",
+      "actions": [
+        {"type": "KeyDown", "keys": ["ctrl"]},
+        {"type": "PressKey", "keys": ["v"], "duration": 0.1},
+        {"type": "KeyUp", "keys": ["ctrl"]}
+      ],
+      "category": "keyboard"
+    },
+    {
+      "trigger": "select all",
+      "actions": [
+        {"type": "KeyDown", "keys": ["ctrl"]},
+        {"type": "PressKey", "keys": ["a"], "duration": 0.1},
+        {"type": "KeyUp", "keys": ["ctrl"]}
+      ],
+      "category": "keyboard"
+    },
+    {
+      "trigger": "hold shift",
+      "actions": [
+        {"type": "KeyDown", "keys": ["shift"]},
+        {"type": "Pause", "duration": 2.0},
+        {"type": "KeyUp", "keys": ["shift"]}
+      ],
+      "category": "keyboard"
+    }
+  ]
+}
