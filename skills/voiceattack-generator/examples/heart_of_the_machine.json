@@ -1,0 +1,262 @@
+{
+  "name": "Heart of the Machine",
+  "commands": [
+
+    {"_section": "=== TURN & ACTIONS ==="},
+    {
+      "trigger": "[end; next] turn",
+      "key": "space",
+      "category": "turns"
+    },
+    {
+      "trigger": "[skip; straight] to next turn",
+      "key": "q",
+      "category": "turns"
+    },
+    {
+      "trigger": "cancel",
+      "key": "escape",
+      "category": "turns"
+    },
+    {
+      "trigger": "[keep; continue] action",
+      "actions": [
+        {"type": "KeyDown", "keys": ["shift"]},
+        {"type": "Pause", "duration": 0.5},
+        {"type": "KeyUp", "keys": ["shift"]}
+      ],
+      "category": "turns"
+    },
+
+    {"_section": "=== CAMERA MOVEMENT ==="},
+    {
+      "trigger": "[move; pan] forward",
+      "key": "w",
+      "category": "camera"
+    },
+    {
+      "trigger": "[move; pan] backward",
+      "key": "s",
+      "category": "camera"
+    },
+    {
+      "trigger": "[move; pan] left",
+      "key": "a",
+      "category": "camera"
+    },
+    {
+      "trigger": "[move; pan] right",
+      "key": "d",
+      "category": "camera"
+    },
+    {
+      "trigger": "zoom in",
+      "key": "pageup",
+      "category": "camera"
+    },
+    {
+      "trigger": "zoom out",
+      "key": "pagedown",
+      "category": "camera"
+    },
+    {
+      "trigger": "rotate left",
+      "key": "q",
+      "category": "camera"
+    },
+    {
+      "trigger": "rotate right",
+      "key": "e",
+      "category": "camera"
+    },
+    {
+      "trigger": "[camera; rotate] tilt [mode;]",
+      "key": "b",
+      "category": "camera"
+    },
+
+    {"_section": "=== UI PANELS ==="},
+    {
+      "trigger": "[open;] map [mode;]",
+      "key": "tab",
+      "category": "ui"
+    },
+    {
+      "trigger": "[open;] build [mode;]",
+      "key": "b",
+      "category": "ui"
+    },
+    {
+      "trigger": "[open;] command [mode;]",
+      "key": "v",
+      "category": "ui"
+    },
+    {
+      "trigger": "[open;] hacking",
+      "key": "y",
+      "category": "ui"
+    },
+    {
+      "trigger": "[open; show] forces [sidebar;]",
+      "key": "f",
+      "category": "ui"
+    },
+    {
+      "trigger": "[open; show] information [window;]",
+      "key": "o",
+      "category": "ui"
+    },
+    {
+      "trigger": "[open; show] victory [path;]",
+      "key": "u",
+      "category": "ui"
+    },
+    {
+      "trigger": "[open; show] hardware",
+      "key": "x",
+      "category": "ui"
+    },
+    {
+      "trigger": "[open; show] handbook",
+      "key": "h",
+      "category": "ui"
+    },
+    {
+      "trigger": "[open; show] [recent;] events",
+      "key": "m",
+      "category": "ui"
+    },
+    {
+      "trigger": "[open; show] scout map",
+      "key": "t",
+      "category": "ui"
+    },
+    {
+      "trigger": "[open; show] regional map",
+      "key": "t",
+      "category": "ui"
+    },
+    {
+      "trigger": "[show;] structures [with;] complaints",
+      "key": "g",
+      "category": "ui"
+    },
+    {
+      "trigger": "[open;] lens filters",
+      "actions": [
+        {"type": "KeyDown", "keys": ["ctrl"]},
+        {"type": "PressKey", "keys": ["q"], "duration": 0.1},
+        {"type": "KeyUp", "keys": ["ctrl"]}
+      ],
+      "category": "ui"
+    },
+
+    {"_section": "=== INSPECT & TOOLTIPS ==="},
+    {
+      "trigger": "[show;] detailed tooltips",
+      "actions": [
+        {"type": "KeyDown", "keys": ["shift"]},
+        {"type": "Pause", "duration": 2.0},
+        {"type": "KeyUp", "keys": ["shift"]}
+      ],
+      "category": "inspect"
+    },
+    {
+      "trigger": "[show;] hyper [detailed;] tooltips",
+      "actions": [
+        {"type": "KeyDown", "keys": ["ctrl"]},
+        {"type": "Pause", "duration": 2.0},
+        {"type": "KeyUp", "keys": ["ctrl"]}
+      ],
+      "category": "inspect"
+    },
+    {
+      "trigger": "inspect [mode;]",
+      "actions": [
+        {"type": "KeyDown", "keys": ["ctrl"]},
+        {"type": "Pause", "duration": 2.0},
+        {"type": "KeyUp", "keys": ["ctrl"]}
+      ],
+      "category": "inspect"
+    },
+    {
+      "trigger": "delete [structure;] mode",
+      "actions": [
+        {"type": "KeyDown", "keys": ["shift"]},
+        {"type": "Pause", "duration": 2.0},
+        {"type": "KeyUp", "keys": ["shift"]}
+      ],
+      "category": "inspect"
+    },
+
+    {"_section": "=== SPECIAL MODES ==="},
+    {
+      "trigger": "[full;] sim [virtual reality;] [mode;]",
+      "key": "j",
+      "category": "modes"
+    },
+    {
+      "trigger": "[the;] end of time",
+      "key": "z",
+      "category": "modes"
+    },
+    {
+      "trigger": "previous lens",
+      "key": "z",
+      "category": "modes"
+    },
+
+    {"_section": "=== PHOTO MODE ==="},
+    {
+      "trigger": "photo mode",
+      "key": "f2",
+      "category": "photo"
+    },
+    {
+      "trigger": "take photo",
+      "key": "space",
+      "category": "photo"
+    },
+    {
+      "trigger": "[camera; photo] up",
+      "key": "e",
+      "category": "photo"
+    },
+    {
+      "trigger": "[camera; photo] down",
+      "key": "q",
+      "category": "photo"
+    },
+
+    {"_section": "=== MOUSE ACTIONS ==="},
+    {
+      "trigger": "[left;] click",
+      "mouse": "left_click",
+      "category": "mouse"
+    },
+    {
+      "trigger": "right click",
+      "mouse": "right_click",
+      "category": "mouse"
+    },
+    {
+      "trigger": "double click",
+      "mouse": "double_click",
+      "category": "mouse"
+    },
+    {
+      "trigger": "scroll up",
+      "actions": [
+        {"type": "MouseAction", "action": "scroll_up", "scroll_clicks": 3}
+      ],
+      "category": "mouse"
+    },
+    {
+      "trigger": "scroll down",
+      "actions": [
+        {"type": "MouseAction", "action": "scroll_down", "scroll_clicks": 3}
+      ],
+      "category": "mouse"
+    }
+  ]
+}
