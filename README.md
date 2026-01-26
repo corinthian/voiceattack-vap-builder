@@ -8,7 +8,16 @@ Claude Code plugin for generating VoiceAttack voice command profiles from JSON.
 /plugin install https://github.com/corinthian/voiceattack-vap-builder
 ```
 
-## Quick Start
+## Quick Start: Screenshot Method
+
+The fastest way to create a profile - no manual JSON editing required.
+
+1. Take a screenshot of your game's keybinding/controls screen
+2. Provide the screenshot to Claude Code: "Create a VoiceAttack profile from this screenshot"
+3. Claude extracts keybindings and generates both the JSON and VAP files
+4. Import the `.vap` file into VoiceAttack (File > Import Profile)
+
+## Manual Method: JSON Definition
 
 1. Create a JSON file with your commands:
 
