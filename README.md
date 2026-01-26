@@ -72,6 +72,20 @@ See `skills/voiceattack-generator/examples/` for complete examples.
 {"_section": "=== COMBAT ==="}
 ```
 
+## Supported Actions
+
+This generator covers basic input simulation - suitable for gaming and simple automation.
+
+| Action | Description |
+|--------|-------------|
+| PressKey | Press and release a key |
+| KeyDown / KeyUp | Hold or release a key (for combos like Ctrl+C) |
+| MouseAction | Clicks (left, right, middle, double) and scroll (up, down) |
+| Pause | Wait between actions |
+| Say | Text-to-speech output |
+
+**Not supported:** Variables, conditionals, loops, launching applications, clipboard operations, executing other commands, or any advanced VoiceAttack logic. For those features, edit the profile directly in VoiceAttack after import.
+
 ## Command Phrase Syntax
 
 - `[word1; word2]` - alternatives (either triggers the command)
