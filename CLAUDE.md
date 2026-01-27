@@ -18,7 +18,7 @@ VoiceAttack profile tools - accessibility utilities for creating and analyzing V
 python3 skills/voiceattack-generator/scripts/vap_generator.py input.json output.vap
 
 # Decode binary VAP to XML
-python3 vap_decoder.py input.vap [output.xml]
+python3 skills/voiceattack-decoder/scripts/vap_decoder.py input.vap [output.xml]
 
 # Validate generated XML
 xmllint --noout output.vap
@@ -32,7 +32,7 @@ python3 -c "import zlib; print(zlib.decompress(open('file.vap','rb').read(),-15)
 - `.vap` files: either deflate-compressed binary OR uncompressed XML
 - VoiceAttack accepts raw XML directly (no compression needed)
 - Binary compression: `zlib.decompress(data, -15)` (raw deflate)
-- See `VAP_FORMAT.md` for binary structure details
+- See `skills/voiceattack-decoder/docs/VAP_FORMAT.md` for binary structure details
 
 ## XML Profile Structure
 
@@ -86,16 +86,15 @@ Shift: 16     Ctrl: 17      Alt: 18       Win: 91
 
 ## Project Files
 
-**Tools:**
-- `skills/voiceattack-generator/scripts/vap_generator.py` - JSON to VAP generator
-- `vap_decoder.py` - Binary VAP to XML decoder
+**Skills:**
+- `skills/voiceattack-generator/` - JSON to VAP generator (registered in manifest.json)
+- `skills/voiceattack-decoder/` - Binary VAP to XML decoder (standalone tool, NOT in manifest)
 
-**Skill (Claude Code plugin):**
+**Key Files:**
+- `skills/voiceattack-generator/scripts/vap_generator.py` - Generator script
 - `skills/voiceattack-generator/SKILL.md` - Skill instructions (includes screenshot workflow)
-
-**Reference:**
-- `VAP_FORMAT.md` - Binary format documentation
-- `sample_profile.json` - Example JSON with various action types
+- `skills/voiceattack-decoder/scripts/vap_decoder.py` - Decoder script
+- `skills/voiceattack-decoder/docs/VAP_FORMAT.md` - Binary format documentation
 
 ## Generator JSON Format
 
