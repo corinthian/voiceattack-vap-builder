@@ -13,6 +13,14 @@ import json
 import sys
 from xml.sax.saxutils import escape
 
+# Track warnings for summary
+_warnings = []
+
+def warn(msg):
+    """Print warning to stderr and track it."""
+    _warnings.append(msg)
+    print(f"WARNING: {msg}", file=sys.stderr)
+
 # Windows Virtual Key Codes
 KEY_CODES = {
     # Letters
@@ -78,6 +86,8 @@ def action_xml(action, ordinal=0):
                 codes.append(KEY_CODES[k_lower])
             elif k.isdigit():
                 codes.append(int(k))
+            else:
+                warn(f"Unknown key '{k}' - ignored")
         if codes:
             key_codes_xml = '<KeyCodes>\n' + '\n'.join(
                 f'            <unsignedShort>{c}</unsignedShort>' for c in codes
@@ -85,6 +95,8 @@ def action_xml(action, ordinal=0):
 
     elif action_type == 'MouseAction':
         mouse_action = action.get('action', 'left_click').lower()
+        if mouse_action not in MOUSE_CODES:
+            warn(f"Unknown mouse action '{mouse_action}' - defaulting to left_click")
         context = MOUSE_CODES.get(mouse_action, 'LC')
         x = action.get('scroll_clicks', 1 if context in ('SF', 'SB') else 0)
 
@@ -135,16 +147,22 @@ def command_xml(cmd):
     """Generate XML for a single command."""
     cmd_id = new_guid()
     base_id = new_guid()
-    trigger = escape(cmd.get('trigger', 'unnamed command'))
+    trigger_raw = cmd.get('trigger', 'unnamed command')
+    trigger = escape(trigger_raw)
     category = escape(cmd.get('category', 'general'))
 
     actions = cmd.get('actions', [])
     if not actions:
         # Default: single key press if 'key' specified
         if 'key' in cmd:
-            actions = [{'type': 'PressKey', 'keys': [cmd['key']], 'duration': cmd.get('duration', 0.1)}]
+            key = cmd['key']
+            if key.lower() not in KEY_CODES and not key.isdigit():
+                warn(f"Command '{trigger_raw}': unknown key '{key}' - command will have no action")
+            actions = [{'type': 'PressKey', 'keys': [key], 'duration': cmd.get('duration', 0.1)}]
         elif 'mouse' in cmd:
             actions = [{'type': 'MouseAction', 'action': cmd['mouse']}]
+        else:
+            warn(f"Command '{trigger_raw}': no key, mouse, or actions defined")
 
     actions_xml = '\n'.join(action_xml(a, i) for i, a in enumerate(actions))
 
@@ -352,6 +370,8 @@ def main():
 
     print(f"Generated: {output_file}")
     print(f"Commands: {cmd_count}")
+    if _warnings:
+        print(f"Warnings: {len(_warnings)}")
 
 
 if __name__ == '__main__':
