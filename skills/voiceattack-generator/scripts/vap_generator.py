@@ -11,6 +11,7 @@ Usage: python3 vap_generator.py <input.json> [output.vap]
 import uuid
 import json
 import sys
+from xml.sax.saxutils import escape
 
 # Windows Virtual Key Codes
 KEY_CODES = {
@@ -91,7 +92,7 @@ def action_xml(action, ordinal=0):
         duration = action.get('duration', 0.5)
 
     elif action_type == 'Say':
-        context = action.get('text', '')
+        context = escape(action.get('text', ''))
         x = action.get('volume', 100)
         y = action.get('rate', 0)
 
@@ -134,8 +135,8 @@ def command_xml(cmd):
     """Generate XML for a single command."""
     cmd_id = new_guid()
     base_id = new_guid()
-    trigger = cmd.get('trigger', 'unnamed command')
-    category = cmd.get('category', 'general')
+    trigger = escape(cmd.get('trigger', 'unnamed command'))
+    category = escape(cmd.get('category', 'general'))
 
     actions = cmd.get('actions', [])
     if not actions:
@@ -231,7 +232,7 @@ def command_xml(cmd):
 def generate_profile(profile_data):
     """Generate complete profile XML."""
     profile_id = profile_data.get('id', new_guid())
-    name = profile_data.get('name', 'Generated Profile')
+    name = escape(profile_data.get('name', 'Generated Profile'))
     commands = profile_data.get('commands', [])
 
     # Filter out section markers (entries with _section key)
