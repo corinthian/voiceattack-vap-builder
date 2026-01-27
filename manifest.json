@@ -1,8 +1,8 @@
 {
   "name": "voiceattack-tools",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "displayName": "VoiceAttack Profile Tools",
-  "description": "Generate VoiceAttack voice command profiles from JSON",
+  "description": "Generate VoiceAttack voice command profiles from JSON or screenshots",
   "publisher": "corinthian",
   "skills": [
     {
