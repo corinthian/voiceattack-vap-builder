@@ -74,7 +74,7 @@ See `skills/voiceattack-generator/examples/` for complete examples.
 
 ## Supported Actions
 
-This generator covers basic input simulation - suitable for gaming and simple automation.
+This generator covers basic input simulation - suitable for gaming and simple automation. Special characters (`&`, `<`, `>`) in trigger phrases are automatically XML-escaped.
 
 | Action | Description |
 |--------|-------------|
