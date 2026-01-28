@@ -8,54 +8,139 @@ Supports: PressKey, MouseAction, Pause, KeyDown, KeyUp, KeyToggle, Say
 Usage: python3 vap_generator.py <input.json> [output.vap]
 """
 
-import uuid
 import json
 import sys
+import uuid
 from xml.sax.saxutils import escape
 
 # Track warnings for summary
 _warnings = []
+
 
 def warn(msg):
     """Print warning to stderr and track it."""
     _warnings.append(msg)
     print(f"WARNING: {msg}", file=sys.stderr)
 
+
 # Windows Virtual Key Codes
 KEY_CODES = {
     # Letters
-    'a': 65, 'b': 66, 'c': 67, 'd': 68, 'e': 69, 'f': 70, 'g': 71, 'h': 72,
-    'i': 73, 'j': 74, 'k': 75, 'l': 76, 'm': 77, 'n': 78, 'o': 79, 'p': 80,
-    'q': 81, 'r': 82, 's': 83, 't': 84, 'u': 85, 'v': 86, 'w': 87, 'x': 88,
-    'y': 89, 'z': 90,
+    "a": 65,
+    "b": 66,
+    "c": 67,
+    "d": 68,
+    "e": 69,
+    "f": 70,
+    "g": 71,
+    "h": 72,
+    "i": 73,
+    "j": 74,
+    "k": 75,
+    "l": 76,
+    "m": 77,
+    "n": 78,
+    "o": 79,
+    "p": 80,
+    "q": 81,
+    "r": 82,
+    "s": 83,
+    "t": 84,
+    "u": 85,
+    "v": 86,
+    "w": 87,
+    "x": 88,
+    "y": 89,
+    "z": 90,
     # Numbers
-    '0': 48, '1': 49, '2': 50, '3': 51, '4': 52,
-    '5': 53, '6': 54, '7': 55, '8': 56, '9': 57,
+    "0": 48,
+    "1": 49,
+    "2": 50,
+    "3": 51,
+    "4": 52,
+    "5": 53,
+    "6": 54,
+    "7": 55,
+    "8": 56,
+    "9": 57,
     # Function keys
-    'f1': 112, 'f2': 113, 'f3': 114, 'f4': 115, 'f5': 116, 'f6': 117,
-    'f7': 118, 'f8': 119, 'f9': 120, 'f10': 121, 'f11': 122, 'f12': 123,
+    "f1": 112,
+    "f2": 113,
+    "f3": 114,
+    "f4": 115,
+    "f5": 116,
+    "f6": 117,
+    "f7": 118,
+    "f8": 119,
+    "f9": 120,
+    "f10": 121,
+    "f11": 122,
+    "f12": 123,
     # Special keys
-    'enter': 13, 'return': 13, 'escape': 27, 'esc': 27, 'space': 32,
-    'tab': 9, 'backspace': 8, 'delete': 46, 'insert': 45,
-    'home': 36, 'end': 35, 'pageup': 33, 'pagedown': 34,
+    "enter": 13,
+    "return": 13,
+    "escape": 27,
+    "esc": 27,
+    "space": 32,
+    "tab": 9,
+    "backspace": 8,
+    "delete": 46,
+    "insert": 45,
+    "home": 36,
+    "end": 35,
+    "pageup": 33,
+    "pagedown": 34,
     # Arrow keys
-    'left': 37, 'up': 38, 'right': 39, 'down': 40,
-    # Modifiers
-    'shift': 16, 'ctrl': 17, 'control': 17, 'alt': 18, 'win': 91, 'windows': 91,
+    "left": 37,
+    "up": 38,
+    "right": 39,
+    "down": 40,
+    # Modifiers (generic)
+    "shift": 16,
+    "ctrl": 17,
+    "control": 17,
+    "alt": 18,
+    "win": 91,
+    "windows": 91,
+    # Modifiers (left/right specific - for chording)
+    "lshift": 160,
+    "rshift": 161,
+    "lctrl": 162,
+    "lcontrol": 162,
+    "rctrl": 163,
+    "rcontrol": 163,
+    "lalt": 164,
+    "ralt": 165,
+    "lwin": 91,
+    "rwin": 92,
     # Punctuation
-    'comma': 188, 'period': 190, 'slash': 191, 'semicolon': 186,
-    'quote': 222, 'bracket_left': 219, 'bracket_right': 221,
-    'backslash': 220, 'minus': 189, 'equals': 187, 'grave': 192,
+    "comma": 188,
+    "period": 190,
+    "slash": 191,
+    "semicolon": 186,
+    "quote": 222,
+    "bracket_left": 219,
+    "bracket_right": 221,
+    "backslash": 220,
+    "minus": 189,
+    "equals": 187,
+    "grave": 192,
 }
 
 # Mouse action codes
 MOUSE_CODES = {
-    'left_click': 'LC', 'lc': 'LC',
-    'right_click': 'RC', 'rc': 'RC',
-    'middle_click': 'MC', 'mc': 'MC',
-    'double_click': 'LDC', 'ldc': 'LDC',
-    'scroll_up': 'SF', 'sf': 'SF',
-    'scroll_down': 'SB', 'sb': 'SB',
+    "left_click": "LC",
+    "lc": "LC",
+    "right_click": "RC",
+    "rc": "RC",
+    "middle_click": "MC",
+    "mc": "MC",
+    "double_click": "LDC",
+    "ldc": "LDC",
+    "scroll_up": "SF",
+    "sf": "SF",
+    "scroll_down": "SB",
+    "sb": "SB",
 }
 
 
@@ -65,18 +150,18 @@ def new_guid():
 
 def action_xml(action, ordinal=0):
     """Generate XML for a single action."""
-    action_type = action.get('type', 'PressKey')
+    action_type = action.get("type", "PressKey")
 
     # Common fields
     action_id = new_guid()
-    duration = action.get('duration', 0.1 if action_type == 'PressKey' else 0)
-    delay = action.get('delay', 0)
-    context = ''
+    duration = action.get("duration", 0.1 if action_type == "PressKey" else 0)
+    delay = action.get("delay", 0)
+    context = ""
     x, y, z = 0, 0, 0
-    key_codes_xml = '<KeyCodes/>'
+    key_codes_xml = "<KeyCodes/>"
 
-    if action_type in ('PressKey', 'KeyDown', 'KeyUp', 'KeyToggle'):
-        keys = action.get('keys', [])
+    if action_type in ("PressKey", "KeyDown", "KeyUp", "KeyToggle"):
+        keys = action.get("keys", [])
         if isinstance(keys, str):
             keys = [keys]
         codes = []
@@ -89,26 +174,30 @@ def action_xml(action, ordinal=0):
             else:
                 warn(f"Unknown key '{k}' - ignored")
         if codes:
-            key_codes_xml = '<KeyCodes>\n' + '\n'.join(
-                f'            <unsignedShort>{c}</unsignedShort>' for c in codes
-            ) + '\n          </KeyCodes>'
+            key_codes_xml = (
+                "<KeyCodes>\n"
+                + "\n".join(
+                    f"            <unsignedShort>{c}</unsignedShort>" for c in codes
+                )
+                + "\n          </KeyCodes>"
+            )
 
-    elif action_type == 'MouseAction':
-        mouse_action = action.get('action', 'left_click').lower()
+    elif action_type == "MouseAction":
+        mouse_action = action.get("action", "left_click").lower()
         if mouse_action not in MOUSE_CODES:
             warn(f"Unknown mouse action '{mouse_action}' - defaulting to left_click")
-        context = MOUSE_CODES.get(mouse_action, 'LC')
-        x = action.get('scroll_clicks', 1 if context in ('SF', 'SB') else 0)
+        context = MOUSE_CODES.get(mouse_action, "LC")
+        x = action.get("scroll_clicks", 1 if context in ("SF", "SB") else 0)
 
-    elif action_type == 'Pause':
-        duration = action.get('duration', 0.5)
+    elif action_type == "Pause":
+        duration = action.get("duration", 0.5)
 
-    elif action_type == 'Say':
-        context = escape(action.get('text', ''))
-        x = action.get('volume', 100)
-        y = action.get('rate', 0)
+    elif action_type == "Say":
+        context = escape(action.get("text", ""))
+        x = action.get("volume", 100)
+        y = action.get("rate", 0)
 
-    return f'''        <CommandAction>
+    return f"""        <CommandAction>
           <PairingSet>false</PairingSet>
           <PairingSetElse>false</PairingSetElse>
           <Ordinal>{ordinal}</Ordinal>
@@ -140,33 +229,41 @@ def action_xml(action, ordinal=0):
           <Disabled>false</Disabled>
           <RandomSounds/>
           <ConditionExpressions/>
-        </CommandAction>'''
+        </CommandAction>"""
 
 
 def command_xml(cmd):
     """Generate XML for a single command."""
     cmd_id = new_guid()
     base_id = new_guid()
-    trigger_raw = cmd.get('trigger', 'unnamed command')
+    trigger_raw = cmd.get("trigger", "unnamed command")
     trigger = escape(trigger_raw)
-    category = escape(cmd.get('category', 'general'))
+    category = escape(cmd.get("category", "general"))
 
-    actions = cmd.get('actions', [])
+    actions = cmd.get("actions", [])
     if not actions:
         # Default: single key press if 'key' specified
-        if 'key' in cmd:
-            key = cmd['key']
+        if "key" in cmd:
+            key = cmd["key"]
             if key.lower() not in KEY_CODES and not key.isdigit():
-                warn(f"Command '{trigger_raw}': unknown key '{key}' - command will have no action")
-            actions = [{'type': 'PressKey', 'keys': [key], 'duration': cmd.get('duration', 0.1)}]
-        elif 'mouse' in cmd:
-            actions = [{'type': 'MouseAction', 'action': cmd['mouse']}]
+                warn(
+                    f"Command '{trigger_raw}': unknown key '{key}' - command will have no action"
+                )
+            actions = [
+                {
+                    "type": "PressKey",
+                    "keys": [key],
+                    "duration": cmd.get("duration", 0.1),
+                }
+            ]
+        elif "mouse" in cmd:
+            actions = [{"type": "MouseAction", "action": cmd["mouse"]}]
         else:
             warn(f"Command '{trigger_raw}': no key, mouse, or actions defined")
 
-    actions_xml = '\n'.join(action_xml(a, i) for i, a in enumerate(actions))
+    actions_xml = "\n".join(action_xml(a, i) for i, a in enumerate(actions))
 
-    return f'''    <Command>
+    return f"""    <Command>
       <Referrer xsi:nil="true"/>
       <ExecType>3</ExecType>
       <Confidence>0</Confidence>
@@ -244,21 +341,21 @@ def command_xml(cmd):
       <EX2>false</EX2>
       <InternalId xsi:nil="true"/>
       <HasInput>true</HasInput>
-    </Command>'''
+    </Command>"""
 
 
 def generate_profile(profile_data):
     """Generate complete profile XML."""
-    profile_id = profile_data.get('id', new_guid())
-    name = escape(profile_data.get('name', 'Generated Profile'))
-    commands = profile_data.get('commands', [])
+    profile_id = profile_data.get("id", new_guid())
+    name = escape(profile_data.get("name", "Generated Profile"))
+    commands = profile_data.get("commands", [])
 
     # Filter out section markers (entries with _section key)
-    commands = [c for c in commands if '_section' not in c]
+    commands = [c for c in commands if "_section" not in c]
 
-    commands_xml = '\n'.join(command_xml(c) for c in commands)
+    commands_xml = "\n".join(command_xml(c) for c in commands)
 
-    return f'''<?xml version="1.0" encoding="utf-8"?>
+    return f"""<?xml version="1.0" encoding="utf-8"?>
 <Profile xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <Id>{profile_id}</Id>
   <Name>{name}</Name>
@@ -304,7 +401,7 @@ def generate_profile(profile_data):
   <InitializeCommandId xsi:nil="true"/>
   <UseProcessOverride>false</UseProcessOverride>
   <HasMB>false</HasMB>
-</Profile>'''
+</Profile>"""
 
 
 def print_help():
@@ -351,23 +448,27 @@ Key Names:
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] in ('-h', '--help'):
+    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
         print_help()
         sys.exit(0 if sys.argv[1:] else 1)
 
     input_file = sys.argv[1]
-    output_file = sys.argv[2] if len(sys.argv) > 2 else input_file.replace('.json', '.vap')
+    output_file = (
+        sys.argv[2] if len(sys.argv) > 2 else input_file.replace(".json", ".vap")
+    )
 
-    with open(input_file, 'r') as f:
+    with open(input_file, "r") as f:
         profile_data = json.load(f)
 
     xml = generate_profile(profile_data)
 
-    with open(output_file, 'w', encoding='utf-8') as f:
+    with open(output_file, "w", encoding="utf-8") as f:
         f.write(xml)
 
     # Count actual commands (excluding section markers)
-    cmd_count = len([c for c in profile_data.get('commands', []) if '_section' not in c])
+    cmd_count = len(
+        [c for c in profile_data.get("commands", []) if "_section" not in c]
+    )
 
     print(f"Generated: {output_file}")
     print(f"Commands: {cmd_count}")
@@ -375,5 +476,5 @@ def main():
         print(f"Warnings: {len(_warnings)}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
