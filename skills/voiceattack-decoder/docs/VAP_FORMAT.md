@@ -127,6 +127,59 @@ Each command contains:
 - `system` - System commands
 - `navigation` - Navigation commands
 
+## Mouse Action Structure
+
+Mouse actions use a context code stored as a length-prefixed string, with scroll clicks stored as a double 24 bytes before the context code.
+
+### Mouse Action Context Codes
+
+Format: `{button}{action}`
+
+| Button | Code | Button | Code |
+|--------|------|--------|------|
+| Left | L | Back | 4 |
+| Middle | M | Forward | 5 |
+| Right | R | | |
+
+| Action | Code | Action | Code |
+|--------|------|--------|------|
+| Click | C | Down (press) | D |
+| Double Click | DC | Up (release) | U |
+| Triple Click | TC | Toggle | T |
+
+**Examples:** `LC` (left click), `RDC` (right double click), `MTC` (middle triple click), `4D` (back down), `5T` (forward toggle)
+
+### Scroll Codes
+
+| Code | Direction |
+|------|-----------|
+| SF | Scroll Forward (up) |
+| SB | Scroll Back (down) |
+| SL | Scroll Left |
+| SR | Scroll Right |
+
+### Scroll Click Count (Binary)
+
+Scroll clicks are stored as an IEEE 754 double at offset -24 from the context code:
+
+```
+Offset -24: double (scroll clicks)  e.g., 0x3ff0... = 1.0, 0x4024... = 10.0
+Offset -16: zeros
+Offset -8:  zeros
+Offset -2:  uint32 length prefix (2 for "SF", "SB", etc.)
+Offset 0:   context string
+```
+
+### Scroll Click Count (XML)
+
+In XML format, scroll clicks are stored in the `<Duration>` field:
+
+```xml
+<ActionType>MouseAction</ActionType>
+<Duration>5</Duration>  <!-- 5 scroll clicks -->
+<Context>SL</Context>   <!-- scroll left -->
+```
+
 ## Application Launch Actions
 
 App launch commands contain:
