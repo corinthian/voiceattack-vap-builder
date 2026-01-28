@@ -3,7 +3,7 @@
 VoiceAttack Profile Generator
 Generates valid .vap XML files from simple JSON input.
 
-Supports: PressKey, MouseAction, Pause, KeyDown, KeyUp, Say
+Supports: PressKey, MouseAction, Pause, KeyDown, KeyUp, KeyToggle, Say
 
 Usage: python3 vap_generator.py <input.json> [output.vap]
 """
@@ -75,7 +75,7 @@ def action_xml(action, ordinal=0):
     x, y, z = 0, 0, 0
     key_codes_xml = '<KeyCodes/>'
 
-    if action_type in ('PressKey', 'KeyDown', 'KeyUp'):
+    if action_type in ('PressKey', 'KeyDown', 'KeyUp', 'KeyToggle'):
         keys = action.get('keys', [])
         if isinstance(keys, str):
             keys = [keys]
@@ -335,6 +335,7 @@ Action Types:
   PressKey     - Press and release key(s)
   KeyDown      - Hold key down
   KeyUp        - Release held key
+  KeyToggle    - Toggle key state (press once = down, press again = up)
   MouseAction  - Mouse click/scroll (left_click, right_click, double_click, scroll_up, scroll_down)
   Pause        - Wait (duration in seconds)
   Say          - Text-to-speech (text, volume, rate)

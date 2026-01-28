@@ -23,8 +23,8 @@ python3 skills/voiceattack-decoder/scripts/vap_decoder.py input.vap [output.xml]
 # Validate generated XML
 xmllint --noout output.vap
 
-# Quick decode for inspection (Python one-liner)
-python3 -c "import zlib; print(zlib.decompress(open('file.vap','rb').read(),-15).decode())"
+# Quick inspect binary VAP (hex dump of decompressed data)
+python3 -c "import zlib; d=zlib.decompress(open('file.vap','rb').read(),-15); print(f'Size: {len(d)} bytes'); print(d[:500])"
 ```
 
 ## VAP File Format
@@ -61,6 +61,7 @@ python3 -c "import zlib; print(zlib.decompress(open('file.vap','rb').read(),-15)
 | `PressKey` | - | `KeyCodes/unsignedShort`, `Duration` (min 0.1s) |
 | `KeyDown` | - | `KeyCodes/unsignedShort` |
 | `KeyUp` | - | `KeyCodes/unsignedShort` |
+| `KeyToggle` | - | `KeyCodes/unsignedShort` (toggle key state) |
 | `MouseAction` | see codes below | `X` (scroll clicks) |
 | `Say` | text to speak | `X` (volume 0-100), `Y` (rate) |
 | `Launch` | executable path | `Context2` (args), `Context3` (working dir) |
@@ -124,6 +125,7 @@ Use `{"_section": "..."}` entries to organize JSON - they're ignored by generato
 | PressKey | keys, duration (default 0.1) |
 | KeyDown | keys |
 | KeyUp | keys |
+| KeyToggle | keys (press once = down, again = up) |
 | MouseAction | action (left_click/right_click/double_click/scroll_up/scroll_down), scroll_clicks |
 | Pause | duration |
 | Say | text, volume (0-100), rate |
