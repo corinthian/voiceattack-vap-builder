@@ -128,19 +128,57 @@ KEY_CODES = {
 }
 
 # Mouse action codes
+# Format: {button}_{action} -> CODE
+# Buttons: left, middle, right, back (4), forward (5)
+# Actions: click, double_click, triple_click, down, up, toggle
+# Scroll: scroll_up (SF), scroll_down (SB)
 MOUSE_CODES = {
+    # Left button
     "left_click": "LC",
-    "lc": "LC",
-    "right_click": "RC",
-    "rc": "RC",
+    "left_double_click": "LDC",
+    "left_triple_click": "LTC",
+    "left_down": "LD",
+    "left_up": "LU",
+    "left_toggle": "LT",
+    # Middle button
     "middle_click": "MC",
-    "mc": "MC",
-    "double_click": "LDC",
-    "ldc": "LDC",
+    "middle_double_click": "MDC",
+    "middle_triple_click": "MTC",
+    "middle_down": "MD",
+    "middle_up": "MU",
+    "middle_toggle": "MT",
+    # Right button
+    "right_click": "RC",
+    "right_double_click": "RDC",
+    "right_triple_click": "RTC",
+    "right_down": "RD",
+    "right_up": "RU",
+    "right_toggle": "RT",
+    # Back button (button 4)
+    "back_click": "4C",
+    "back_double_click": "4DC",
+    "back_triple_click": "4TC",
+    "back_down": "4D",
+    "back_up": "4U",
+    "back_toggle": "4T",
+    # Forward button (button 5)
+    "forward_click": "5C",
+    "forward_double_click": "5DC",
+    "forward_triple_click": "5TC",
+    "forward_down": "5D",
+    "forward_up": "5U",
+    "forward_toggle": "5T",
+    # Scroll
     "scroll_up": "SF",
-    "sf": "SF",
     "scroll_down": "SB",
-    "sb": "SB",
+    "scroll_left": "SL",
+    "scroll_right": "SR",
+    # Short aliases for common actions
+    "lc": "LC",
+    "rc": "RC",
+    "mc": "MC",
+    "double_click": "LDC",  # default to left
+    "triple_click": "LTC",  # default to left
 }
 
 
@@ -158,6 +196,7 @@ def action_xml(action, ordinal=0):
     delay = action.get("delay", 0)
     context = ""
     x, y, z = 0, 0, 0
+    scroll_clicks = 0
     key_codes_xml = "<KeyCodes/>"
 
     if action_type in ("PressKey", "KeyDown", "KeyUp", "KeyToggle"):
@@ -187,7 +226,14 @@ def action_xml(action, ordinal=0):
         if mouse_action not in MOUSE_CODES:
             warn(f"Unknown mouse action '{mouse_action}' - defaulting to left_click")
         context = MOUSE_CODES.get(mouse_action, "LC")
-        x = action.get("scroll_clicks", 1 if context in ("SF", "SB") else 0)
+        # scroll_clicks for scroll actions - try Duration field (appears before Context)
+        scroll_clicks = action.get("scroll_clicks", 1 if context in ("SF", "SB", "SL", "SR") else 0)
+        if context in ("SF", "SB", "SL", "SR"):
+            duration = scroll_clicks  # Try Duration for scroll clicks
+        x = scroll_clicks  # Also set X
+        # Duration for click actions (click duration in seconds)
+        if "duration" in action and context not in ("SF", "SB", "SL", "SR"):
+            duration = action["duration"]
 
     elif action_type == "Pause":
         duration = action.get("duration", 0.5)
@@ -222,7 +268,7 @@ def action_xml(action, ordinal=0):
           <ConditionStartValue>0</ConditionStartValue>
           <ConditionStartValueType>0</ConditionStartValueType>
           <ConditionStartType>0</ConditionStartType>
-          <DecimalContext1>0</DecimalContext1>
+          <DecimalContext1>{scroll_clicks}</DecimalContext1>
           <DecimalContext2>0</DecimalContext2>
           <DateContext1>0001-01-01T00:00:00</DateContext1>
           <DateContext2>0001-01-01T00:00:00</DateContext2>

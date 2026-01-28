@@ -62,14 +62,24 @@ python3 -c "import zlib; d=zlib.decompress(open('file.vap','rb').read(),-15); pr
 | `KeyDown` | - | `KeyCodes/unsignedShort` |
 | `KeyUp` | - | `KeyCodes/unsignedShort` |
 | `KeyToggle` | - | `KeyCodes/unsignedShort` (toggle key state) |
-| `MouseAction` | see codes below | `X` (scroll clicks) |
+| `MouseAction` | see codes below | `Duration` (scroll clicks) |
 | `Say` | text to speak | `X` (volume 0-100), `Y` (rate) |
 | `Launch` | executable path | `Context2` (args), `Context3` (working dir) |
 | `Pause` | - | `Duration` |
 | `ExecuteCommand` | command name | - |
 | `SetClipboard` | text to copy | - |
 
-**MouseAction Context Codes:** `LC` (left click), `RC` (right click), `MC` (middle click), `LDC` (double click - NOT `DC`), `SF` (scroll up), `SB` (scroll down)
+**MouseAction Context Codes:**
+
+| Button | Click | Double | Triple | Down | Up | Toggle |
+|--------|-------|--------|--------|------|-----|--------|
+| Left | LC | LDC | LTC | LD | LU | LT |
+| Middle | MC | MDC | MTC | MD | MU | MT |
+| Right | RC | RDC | RTC | RD | RU | RT |
+| Back | 4C | 4DC | 4TC | 4D | 4U | 4T |
+| Forward | 5C | 5DC | 5TC | 5D | 5U | 5T |
+
+**Scroll:** `SF` (up), `SB` (down), `SL` (left), `SR` (right)
 
 ## Command Phrase Syntax
 
@@ -143,7 +153,7 @@ Use `{"_section": "..."}` entries to organize JSON - they're ignored by generato
 | KeyDown | keys |
 | KeyUp | keys |
 | KeyToggle | keys (press once = down, again = up) |
-| MouseAction | action (left_click/right_click/double_click/scroll_up/scroll_down), scroll_clicks |
+| MouseAction | action (see mouse actions below), scroll_clicks (for scroll actions) |
 | Pause | duration |
 | Say | text, volume (0-100), rate |
 
@@ -154,6 +164,19 @@ Special: enter, escape, space, tab, backspace, delete
 Arrows: left, up, right, down
 Modifiers (generic): shift, ctrl, alt, win
 Modifiers (left/right): lshift, rshift, lctrl, rctrl, lalt, ralt, lwin, rwin
+
+### Mouse Actions
+
+**Buttons:** left, middle, right, back, forward
+**Actions:** click, double_click, triple_click, down, up, toggle
+**Scroll:** scroll_up, scroll_down, scroll_left, scroll_right
+
+Format: `{button}_{action}` (e.g., `left_click`, `right_double_click`, `back_toggle`)
+
+```json
+{"trigger": "scroll left", "actions": [{"type": "MouseAction", "action": "scroll_left", "scroll_clicks": 5}]}
+{"trigger": "back toggle", "mouse": "back_toggle"}
+```
 
 ### Key Chording
 
