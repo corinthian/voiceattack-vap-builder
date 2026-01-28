@@ -134,7 +134,11 @@ Once user confirms, run the generator with the final JSON.
 
 ## Mouse Actions
 
-left_click, right_click, middle_click, double_click, scroll_up, scroll_down
+**Buttons:** left, middle, right, back, forward
+**Actions:** click, double_click, triple_click, down, up, toggle
+**Scroll:** scroll_up, scroll_down, scroll_left, scroll_right
+
+Format: `{button}_{action}` (e.g., `left_click`, `right_double_click`, `back_toggle`)
 
 ## Key Names
 
