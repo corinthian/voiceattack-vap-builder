@@ -83,6 +83,10 @@ A-Z: 65-90    0-9: 48-57    F1-F12: 112-123
 Enter: 13     Escape: 27    Space: 32     Tab: 9
 Left: 37      Up: 38        Right: 39     Down: 40
 Shift: 16     Ctrl: 17      Alt: 18       Win: 91
+
+Left/Right modifiers (for chording):
+LShift: 160   RShift: 161   LCtrl: 162    RCtrl: 163
+LAlt: 164     RAlt: 165     LWin: 91      RWin: 92
 ```
 
 ## Project Files
@@ -148,7 +152,15 @@ Use `{"_section": "..."}` entries to organize JSON - they're ignored by generato
 Letters: a-z, Numbers: 0-9, F-keys: f1-f12
 Special: enter, escape, space, tab, backspace, delete
 Arrows: left, up, right, down
-Modifiers: shift, ctrl, alt, win
+Modifiers (generic): shift, ctrl, alt, win
+Modifiers (left/right): lshift, rshift, lctrl, rctrl, lalt, ralt, lwin, rwin
+
+### Key Chording
+
+Press multiple keys simultaneously using a single PressKey with left/right modifiers:
+```json
+{"trigger": "paste", "actions": [{"type": "PressKey", "keys": ["lctrl", "v"]}]}
+```
 
 ## Testing Workflow
 

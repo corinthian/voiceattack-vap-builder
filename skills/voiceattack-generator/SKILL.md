@@ -140,7 +140,19 @@ left_click, right_click, middle_click, double_click, scroll_up, scroll_down
 
 **Letters:** a-z | **Numbers:** 0-9 | **F-keys:** f1-f12
 **Special:** enter, escape, space, tab, backspace, delete, insert, home, end, pageup, pagedown
-**Arrows:** left, up, right, down | **Modifiers:** shift, ctrl, alt, win
+**Arrows:** left, up, right, down
+**Modifiers (generic):** shift, ctrl, alt, win
+**Modifiers (left/right):** lshift, rshift, lctrl, rctrl, lalt, ralt, lwin, rwin
+
+## Key Chording
+
+To press multiple keys simultaneously (e.g., Ctrl+V), use a single PressKey action with multiple keys. Use left/right specific modifiers for reliable chording:
+
+```json
+{"trigger": "paste", "actions": [
+  {"type": "PressKey", "keys": ["lctrl", "v"], "duration": 0.1}
+]}
+```
 
 ## Command Phrase Syntax
 
