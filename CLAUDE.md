@@ -29,23 +29,10 @@ python3 -c "import zlib; d=zlib.decompress(open('file.vap','rb').read(),-15); pr
 
 ## VAP File Format
 
-**Native format:** .NET binary serialization with raw deflate compression
-- VoiceAttack exports profiles as compressed .NET binary data
-- Compression: `zlib.decompress(data, -15)` (raw deflate, wbits=-15)
-- Decompressed content is .NET binary serialization, NOT text/XML
-
-**Import compatibility:** VoiceAttack also accepts uncompressed XML
-- The generator outputs XML (simpler to create, VoiceAttack accepts it)
-- XML import is undocumented but works reliably
-
-**Key distinction:**
-| Tool | Input | Output |
-|------|-------|--------|
-| Generator | JSON | XML (importable by VoiceAttack) |
-| Decoder | .NET binary VAP | Parsed command data |
-
-See `skills/voiceattack-decoder/docs/VAP_FORMAT.md` for binary structure
-See `skills/voiceattack-decoder/docs/VAP_Binary_Schema_Analysis.md` for reverse-engineering notes
+- `.vap` files: either deflate-compressed binary OR uncompressed XML
+- VoiceAttack accepts raw XML directly (no compression needed)
+- Binary compression: `zlib.decompress(data, -15)` (raw deflate)
+- See `skills/voiceattack-decoder/docs/VAP_FORMAT.md` for binary structure details
 
 ## XML Profile Structure
 
