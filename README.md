@@ -102,6 +102,20 @@ Special: enter, escape, space, tab, backspace, delete
 Arrows: left, up, right, down
 Modifiers: shift, ctrl, alt, win
 
+## Decoder Tool (Standalone)
+
+The repo also includes a decoder for inspecting existing `.vap` files. This is a standalone command-line tool, not part of the Claude Code plugin.
+
+```bash
+# Decode binary VAP to XML
+python3 skills/voiceattack-decoder/scripts/vap_decoder.py profile.vap
+
+# Save to file
+python3 skills/voiceattack-decoder/scripts/vap_decoder.py profile.vap output.xml
+```
+
+See `skills/voiceattack-decoder/docs/VAP_FORMAT.md` for binary format documentation.
+
 ## VoiceAttack
 
 [VoiceAttack](https://voiceattack.com/) is a Windows application that executes commands in response to spoken phrases. It's commonly used for:

@@ -1,1 +1,8 @@
 .DS_Store
+
+# Test screenshots
+*.png
+*.jpg
+
+# Test/analysis profiles
+*.vap
