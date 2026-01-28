@@ -1,9 +1,7 @@
 .DS_Store
 __pycache__/
 
-# Test screenshots
-*.png
-*.jpg
-
-# Test/analysis profiles
-*.vap
+# Working directories (not tracked)
+output files/
+reference profiles/
+Screenshots/
