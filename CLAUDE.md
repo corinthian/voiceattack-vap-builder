@@ -4,15 +4,48 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Purpose
 
-VoiceAttack profile generator - accessibility tool to reduce workload when creating VoiceAttack profiles. Converts simple JSON definitions to valid `.vap` files.
+VoiceAttack profile tools - accessibility utilities for creating and analyzing VoiceAttack profiles. Two main workflows:
 
-**Status:** Complete and tested. Profiles import and work in VoiceAttack (tested with Cyber Knights Flashpoint, Heart of the Machine).
+1. **Generator**: JSON → VAP (create profiles from simple definitions)
+2. **Decoder**: Binary VAP → XML (reverse-engineer existing profiles)
+
+**Status:** Complete and tested. Profiles import and work in VoiceAttack.
+
+## Commands
+
+```bash
+# Generate VAP from JSON
+python3 skills/voiceattack-generator/scripts/vap_generator.py input.json output.vap
+
+# Decode binary VAP to XML
+python3 skills/voiceattack-decoder/scripts/vap_decoder.py input.vap [output.xml]
+
+# Validate generated XML
+xmllint --noout output.vap
+
+# Quick inspect binary VAP (hex dump of decompressed data)
+python3 -c "import zlib; d=zlib.decompress(open('file.vap','rb').read(),-15); print(f'Size: {len(d)} bytes'); print(d[:500])"
+```
 
 ## VAP File Format
 
-- `.vap` files: either deflate-compressed binary OR uncompressed XML
-- VoiceAttack accepts raw XML directly (no compression needed)
-- Decode binary profiles: `zlib.decompress(data, -15)` (raw deflate, Python)
+**Native format:** .NET binary serialization with raw deflate compression
+- VoiceAttack exports profiles as compressed .NET binary data
+- Compression: `zlib.decompress(data, -15)` (raw deflate, wbits=-15)
+- Decompressed content is .NET binary serialization, NOT text/XML
+
+**Import compatibility:** VoiceAttack also accepts uncompressed XML
+- The generator outputs XML (simpler to create, VoiceAttack accepts it)
+- XML import is undocumented but works reliably
+
+**Key distinction:**
+| Tool | Input | Output |
+|------|-------|--------|
+| Generator | JSON | XML (importable by VoiceAttack) |
+| Decoder | .NET binary VAP | Parsed command data |
+
+See `skills/voiceattack-decoder/docs/VAP_FORMAT.md` for binary structure
+See `skills/voiceattack-decoder/docs/VAP_Binary_Schema_Analysis.md` for reverse-engineering notes
 
 ## XML Profile Structure
 
@@ -41,6 +74,7 @@ VoiceAttack profile generator - accessibility tool to reduce workload when creat
 | `PressKey` | - | `KeyCodes/unsignedShort`, `Duration` (min 0.1s) |
 | `KeyDown` | - | `KeyCodes/unsignedShort` |
 | `KeyUp` | - | `KeyCodes/unsignedShort` |
+| `KeyToggle` | - | `KeyCodes/unsignedShort` (toggle key state) |
 | `MouseAction` | see codes below | `X` (scroll clicks) |
 | `Say` | text to speak | `X` (volume 0-100), `Y` (rate) |
 | `Launch` | executable path | `Context2` (args), `Context3` (working dir) |
@@ -66,23 +100,18 @@ Shift: 16     Ctrl: 17      Alt: 18       Win: 91
 
 ## Project Files
 
-**Skill (Claude Code plugin):**
-- `skills/voiceattack-generator/scripts/vap_generator.py` - Main generator script
+**Skills:**
+- `skills/voiceattack-generator/` - JSON to VAP generator (registered in manifest.json)
+- `skills/voiceattack-decoder/` - Binary VAP to XML decoder (standalone tool, NOT in manifest)
+
+**Key Files:**
+- `skills/voiceattack-generator/scripts/vap_generator.py` - Generator script
 - `skills/voiceattack-generator/SKILL.md` - Skill instructions (includes screenshot workflow)
-- `skills/voiceattack-generator/examples/` - Example JSON files
+- `skills/voiceattack-decoder/scripts/vap_decoder.py` - Decoder script
+- `skills/voiceattack-decoder/docs/VAP_FORMAT.md` - Binary format documentation
 
-**Reference:**
-- `sample_profile.json` - Example JSON with various action types
-- `cyber_knights_flashpoint.json` - Real game profile (30 commands)
-- `VAP_Binary_Schema_Analysis.md` - Full binary format documentation
+## Generator JSON Format
 
-## Profile Generator
-
-**Usage:** `python3 skills/voiceattack-generator/scripts/vap_generator.py input.json output.vap`
-
-**Note:** User-provided strings (trigger phrases, categories, profile names, Say text) are XML-escaped automatically.
-
-### JSON Input Format
 ```json
 {
   "name": "Profile Name",
@@ -103,30 +132,23 @@ Shift: 16     Ctrl: 17      Alt: 18       Win: 91
 Use `{"_section": "..."}` entries to organize JSON - they're ignored by generator.
 
 ### Supported Actions
+
 | Type | Parameters |
 |------|------------|
 | PressKey | keys, duration (default 0.1) |
 | KeyDown | keys |
 | KeyUp | keys |
+| KeyToggle | keys (press once = down, again = up) |
 | MouseAction | action (left_click/right_click/double_click/scroll_up/scroll_down), scroll_clicks |
 | Pause | duration |
 | Say | text, volume (0-100), rate |
 
 ### Key Names
+
 Letters: a-z, Numbers: 0-9, F-keys: f1-f12
 Special: enter, escape, space, tab, backspace, delete
 Arrows: left, up, right, down
 Modifiers: shift, ctrl, alt, win
-
-## Decoding Existing VAP Files
-
-To analyze existing binary .vap profiles for reference:
-```python
-import zlib
-with open('profile.vap', 'rb') as f:
-    data = f.read()
-xml = zlib.decompress(data, -15).decode('utf-8')
-```
 
 ## Testing Workflow
 
@@ -139,7 +161,7 @@ No automated tests - validation is manual import into VoiceAttack.
 
 ## Screenshot Workflow
 
-See `skills/voiceattack-generator/SKILL.md` for instructions on extracting keybindings from game screenshots.
+See `skills/voiceattack-generator/SKILL.md` for extracting keybindings from game screenshots.
 
 ## External References
 

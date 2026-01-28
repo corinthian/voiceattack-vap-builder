@@ -80,6 +80,7 @@ This generator covers basic input simulation - suitable for gaming and simple au
 |--------|-------------|
 | PressKey | Press and release a key |
 | KeyDown / KeyUp | Hold or release a key (for combos like Ctrl+C) |
+| KeyToggle | Toggle key state (press once = down, again = up) |
 | MouseAction | Clicks (left, right, middle, double) and scroll (up, down) |
 | Pause | Wait between actions |
 | Say | Text-to-speech output |
