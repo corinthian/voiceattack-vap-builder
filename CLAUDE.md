@@ -96,6 +96,19 @@ Shift: 16     Ctrl: 17      Alt: 18       Win: 91
 - `skills/voiceattack-decoder/scripts/vap_decoder.py` - Decoder script
 - `skills/voiceattack-decoder/docs/VAP_FORMAT.md` - Binary format documentation
 
+## Directory Structure
+
+| Directory | Purpose | Access |
+|-----------|---------|--------|
+| `reference profiles/` | VAP files for extracting reference data | Read-only |
+| `Screenshots/` | Game keybinding screenshots | Read-only |
+| `output files/` | Test output (generated VAP and intermediate JSON) | Write |
+
+**Rules:**
+- Never write generated profiles to `reference profiles/` - that's for source VAPs only
+- All screenshots go in `Screenshots/`
+- All test/generated output goes in `output files/`
+
 ## Generator JSON Format
 
 ```json
