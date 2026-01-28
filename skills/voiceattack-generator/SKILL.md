@@ -127,6 +127,7 @@ Once user confirms, run the generator with the final JSON.
 | PressKey | keys, duration (default 0.1) |
 | KeyDown | keys |
 | KeyUp | keys |
+| KeyToggle | keys (press once = down, again = up) |
 | MouseAction | action, scroll_clicks |
 | Pause | duration (seconds) |
 | Say | text, volume (0-100), rate |
