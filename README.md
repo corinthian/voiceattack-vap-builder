@@ -1,6 +1,6 @@
 # VoiceAttack Profile Tools
 
-Claude Code plugin for generating VoiceAttack voice command profiles from JSON.
+Claude plugin for generating VoiceAttack voice command profiles from screenshots or JSON. 
 
 ## Installation
 
@@ -8,16 +8,20 @@ Claude Code plugin for generating VoiceAttack voice command profiles from JSON.
 /plugin install https://github.com/corinthian/voiceattack-vap-builder
 ```
 
+*This package is maintained as a Claude Code plugin; it can be installed into Claude Desktop using the desktop application's "create a skill" function. Point it at the URL for this GitHub directory and Claude will install a plugin into your instance.*
+
 ## Quick Start: Screenshot Method
 
-The fastest way to create a profile - no manual JSON editing required.
+The fastest way to create a profile — no manual editing required.
 
 1. Take a screenshot of your game's keybinding/controls screen
-2. Provide the screenshot to Claude Code: "Create a VoiceAttack profile from this screenshot"
-3. Claude extracts keybindings and generates both the JSON and VAP files
-4. Import the `.vap` file into VoiceAttack (File > Import Profile)
+2. Provide the screenshot to Claude: "Create a VoiceAttack profile from this screenshot"
+3. Claude extracts keybindings and generates both the JSON and VAP (VoiceAttack profile) files
+4. Import the `.vap` file into VoiceAttack
 
 ## Manual Method: JSON Definition
+
+for finer control, you can create your own JSON or ask Claude to give you the JSON to edit. Use your plain text editor to make any changes you want. Upload the edited file for Claude to generate your profile.
 
 1. Create a JSON file with your commands:
 
@@ -34,11 +38,8 @@ The fastest way to create a profile - no manual JSON editing required.
 
 2. Generate the VoiceAttack profile:
 
-```
-/voiceattack-generator my_profile.json output.vap
-```
 
-3. Import `output.vap` into VoiceAttack (File > Import Profile)
+3. Import `output.vap` into VoiceAttack
 
 ## JSON Format
 
@@ -67,14 +68,14 @@ See `skills/voiceattack-generator/examples/` for complete examples.
 }
 ```
 
-### Section Markers (ignored by generator)
+### Section Markers (for organising in VoiceAttack)
 ```json
 {"_section": "=== COMBAT ==="}
 ```
 
 ## Supported Actions
 
-This generator covers basic input simulation - suitable for gaming and simple automation. Special characters (`&`, `<`, `>`) in trigger phrases are automatically XML-escaped.
+This generator covers basic input simulation — suitable for gaming and simple automation. Special characters (`&`, `<`, `>`) in trigger phrases are automatically XML-escaped.
 
 | Action | Description |
 |--------|-------------|
@@ -105,7 +106,7 @@ Modifiers: shift, ctrl, alt, win
 
 ## Decoder Tool (Standalone)
 
-The repo also includes a decoder for inspecting existing `.vap` files. This is a standalone command-line tool, not part of the Claude Code plugin.
+The repo also includes a decoder for inspecting existing `.vap` files. This is a standalone command-line tool, not part of the Claude plugin. 
 
 ```bash
 # Decode binary VAP to XML
