@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 VoiceAttack profile tools - accessibility utilities for creating and analyzing VoiceAttack profiles. Two main workflows:
 
 1. **Generator**: JSON → VAP (create profiles from simple definitions)
-2. **Decoder**: Binary VAP → XML (reverse-engineer existing profiles)
+2. **Decoder**: Binary VAP → XML + JSON (reverse-engineer existing profiles)
 
 **Status:** Complete and tested. Profiles import and work in VoiceAttack.
 
@@ -17,8 +17,9 @@ VoiceAttack profile tools - accessibility utilities for creating and analyzing V
 # Generate VAP from JSON
 python3 skills/voiceattack-generator/scripts/vap_generator.py input.json output.vap
 
-# Decode binary VAP to XML
-python3 skills/voiceattack-decoder/scripts/vap_decoder.py input.vap [output.xml]
+# Decode binary VAP to XML + JSON (dual output)
+python3 skills/voiceattack-decoder/scripts/vap_decoder.py input.vap [output_base]
+# Produces: output_base.xml and output_base.json (or input_decoded.* if no output specified)
 
 # Validate generated XML
 xmllint --noout output.vap

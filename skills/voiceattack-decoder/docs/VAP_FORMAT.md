@@ -160,15 +160,16 @@ Format: `{button}{action}`
 
 ### Scroll Click Count (Binary)
 
-Scroll clicks are stored as an IEEE 754 double at offset -24 from the context code:
+Scroll clicks are stored as an IEEE 754 double at offset -20 from the context code length prefix:
 
 ```
-Offset -24: double (scroll clicks)  e.g., 0x3ff0... = 1.0, 0x4024... = 10.0
-Offset -16: zeros
-Offset -8:  zeros
-Offset -2:  uint32 length prefix (2 for "SF", "SB", etc.)
-Offset 0:   context string
+Offset -20: double (scroll clicks)  e.g., 0x4014... = 5.0
+Offset -12: zeros or other data
+Offset -4:  uint32 length prefix (2 for "SF", "SB", etc.)
+Offset 0:   context string bytes
 ```
+
+Example hex for 5 scroll clicks: `00 00 00 00 00 00 14 40` (5.0 as IEEE 754 double)
 
 ### Scroll Click Count (XML)
 
@@ -232,7 +233,28 @@ decompressed = zlib.decompress(compressed, -15)  # raw deflate
 
 ## Tools
 
-- `vap_decoder.py` - Python decoder script
+### vap_decoder.py
+
+Python decoder script that produces both XML and JSON output.
+
+```bash
+# Decode to basename_decoded.xml and basename_decoded.json
+python vap_decoder.py profile.vap
+
+# Decode to custom output paths
+python vap_decoder.py profile.vap output/myprofile
+
+# Print XML to stdout only (no files written)
+python vap_decoder.py profile.vap --stdout
+```
+
+### Output Files
+
+- **XML**: Human-readable decoded structure for inspection
+- **JSON**: Generator-compatible format for round-trip editing
+
+### Other Tools
+
 - Hex editor for manual inspection
 - zlib utilities for decompression testing
 
