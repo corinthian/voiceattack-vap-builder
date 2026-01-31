@@ -125,6 +125,11 @@ KEY_CODES = {
     "minus": 189,
     "equals": 187,
     "grave": 192,
+    # Toggle keys
+    "capslock": 20,
+    "caps": 20,
+    "numlock": 144,
+    "scrolllock": 145,
 }
 
 # Mouse action codes
