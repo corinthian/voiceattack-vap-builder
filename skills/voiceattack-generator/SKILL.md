@@ -147,7 +147,7 @@ Format: `{button}_{action}` (e.g., `left_click`, `right_double_click`, `back_tog
 **Arrows:** left, up, right, down
 **Modifiers (generic):** shift, ctrl, alt, win
 **Modifiers (left/right):** lshift, rshift, lctrl, rctrl, lalt, ralt, lwin, rwin
-**Numpad:** numpad0-numpad9, numpad_add, numpad_subtract, numpad_multiply, numpad_divide, numpad_decimal
+**Numpad:** numpad0-numpad9, numpad_add, numpad_subtract, numpad_multiply, numpad_divide, numpad_decimal, numpad_separator
 
 ## Key Chording
 
