@@ -98,6 +98,9 @@ Shift: 16     Ctrl: 17      Alt: 18       Win: 91
 Left/Right modifiers (for chording):
 LShift: 160   RShift: 161   LCtrl: 162    RCtrl: 163
 LAlt: 164     RAlt: 165     LWin: 91      RWin: 92
+
+Numpad: Num0-9: 96-105  Multiply: 106  Add: 107
+Separator: 108  Subtract: 109  Decimal: 110  Divide: 111
 ```
 
 ## Project Files
@@ -165,6 +168,7 @@ Special: enter, escape, space, tab, backspace, delete
 Arrows: left, up, right, down
 Modifiers (generic): shift, ctrl, alt, win
 Modifiers (left/right): lshift, rshift, lctrl, rctrl, lalt, ralt, lwin, rwin
+Numpad: numpad0-numpad9, numpad_add, numpad_subtract, numpad_multiply, numpad_divide, numpad_decimal
 
 ### Mouse Actions
 
