@@ -130,6 +130,39 @@ KEY_CODES = {
     "caps": 20,
     "numlock": 144,
     "scrolllock": 145,
+    # Numpad keys
+    "numpad0": 96,
+    "numpad1": 97,
+    "numpad2": 98,
+    "numpad3": 99,
+    "numpad4": 100,
+    "numpad5": 101,
+    "numpad6": 102,
+    "numpad7": 103,
+    "numpad8": 104,
+    "numpad9": 105,
+    "numpad_multiply": 106,
+    "numpad_add": 107,
+    "numpad_separator": 108,
+    "numpad_subtract": 109,
+    "numpad_decimal": 110,
+    "numpad_divide": 111,
+    # Numpad aliases
+    "num0": 96,
+    "num1": 97,
+    "num2": 98,
+    "num3": 99,
+    "num4": 100,
+    "num5": 101,
+    "num6": 102,
+    "num7": 103,
+    "num8": 104,
+    "num9": 105,
+    "num_multiply": 106,
+    "num_add": 107,
+    "num_subtract": 109,
+    "num_decimal": 110,
+    "num_divide": 111,
 }
 
 # Mouse action codes
@@ -495,6 +528,7 @@ Key Names:
   Special: enter, escape, space, tab, backspace, delete
   Arrows: left, up, right, down
   Modifiers: shift, ctrl, alt, win
+  Numpad: numpad0-numpad9, numpad_add, numpad_subtract, numpad_multiply, numpad_divide, numpad_decimal
 """)
 
 
