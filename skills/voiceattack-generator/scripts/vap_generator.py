@@ -528,7 +528,7 @@ Key Names:
   Special: enter, escape, space, tab, backspace, delete
   Arrows: left, up, right, down
   Modifiers: shift, ctrl, alt, win
-  Numpad: numpad0-numpad9, numpad_add, numpad_subtract, numpad_multiply, numpad_divide, numpad_decimal
+  Numpad: numpad0-numpad9, numpad_add, numpad_subtract, numpad_multiply, numpad_divide, numpad_decimal, numpad_separator
 """)
 
 
