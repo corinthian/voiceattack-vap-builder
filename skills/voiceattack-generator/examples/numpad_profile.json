@@ -1,0 +1,26 @@
+{
+  "name": "Numpad Example",
+  "commands": [
+    {"_section": "=== NUMPAD DIGITS ==="},
+    {"trigger": "[press;] num 0", "key": "numpad0", "category": "numpad"},
+    {"trigger": "[press;] num 1", "key": "numpad1", "category": "numpad"},
+    {"trigger": "[press;] num 2", "key": "numpad2", "category": "numpad"},
+    {"trigger": "[press;] num 3", "key": "numpad3", "category": "numpad"},
+    {"trigger": "[press;] num 4", "key": "numpad4", "category": "numpad"},
+    {"trigger": "[press;] num 5", "key": "numpad5", "category": "numpad"},
+    {"trigger": "[press;] num 6", "key": "numpad6", "category": "numpad"},
+    {"trigger": "[press;] num 7", "key": "numpad7", "category": "numpad"},
+    {"trigger": "[press;] num 8", "key": "numpad8", "category": "numpad"},
+    {"trigger": "[press;] num 9", "key": "numpad9", "category": "numpad"},
+
+    {"_section": "=== NUMPAD OPERATORS ==="},
+    {"trigger": "[press;] num plus", "key": "numpad_add", "category": "numpad"},
+    {"trigger": "[press;] num minus", "key": "numpad_subtract", "category": "numpad"},
+    {"trigger": "[press;] num [multiply; times; star]", "key": "numpad_multiply", "category": "numpad"},
+    {"trigger": "[press;] num [divide; slash]", "key": "numpad_divide", "category": "numpad"},
+    {"trigger": "[press;] num [decimal; dot; period]", "key": "numpad_decimal", "category": "numpad"},
+
+    {"_section": "=== NUM LOCK ==="},
+    {"trigger": "[press;] num lock", "key": "numlock", "category": "numpad"}
+  ]
+}
