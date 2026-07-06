@@ -140,19 +140,68 @@ Id GUIDs (rel 0, 169, 479), and each occurs exactly once in the file. They are u
 object Ids, not cross-references. This confirms the recursive envelope: a command nests
 sub-objects (action-sequence / action), each with its own Id.
 
-**Finding 4 [INFERRED] — candidate type tag.** The constant uint32 `0xF1886E09`
-(bytes `09 6e 88 f1`) appears in the action region of *both* numkeys and zoom, near the
-keypress data. It is a plausible class/type identifier, but its role is unconfirmed.
+**Finding 4 — `0xF1886E09` is a generic separator, not a type tag.** The constant uint32
+`0xF1886E09` (bytes `09 6e 88 f1`) recurs throughout the action region of numkeys, zoom
+*and* corinthian, next to every kind of action and field — so it is a structural marker,
+not a per-type discriminator. (An earlier draft treated it as a candidate type tag; the
+corinthian frequency rules that out.)
 
-### Still open after triangulation
-- The exact base the relative offset (331) is measured from.
-- Confirming the object **type tag** (candidate: `0xF1886E09`) and enumerating type codes
-  (PressKey vs BeginCondition vs token-compare).
-- The ascending 2-byte table in the record tail (rel ~589+), likely a container-level
-  offset table rather than keypress payload.
+## Schema map (VoiceAttack XML ↔ binary)
 
-These remaining items are what a *generic* conditional decoder (code) would need. The
-semantic decode and the record layout above are sufficient to explain "how it decodes."
+Source of truth: Edvard `defaultcommand.xml` — VoiceAttack's own `CommandAction`
+serialization. **Conditions are not a separate action type; they are fields on each
+action:** `Ordinal`, `IndentLevel`, `ConditionMet`, `ConditionPairing`, `ConditionGroup`,
+`ConditionStartOperator`, `ConditionStartValue`, `ConditionStartValueType` — alongside
+`ActionType`, `Duration`, `Delay`, `KeyCodes`, `Context`, `X`, `Y`, `InputMode`,
+`IsSuffixAction`. `IndentLevel` is what nests actions inside a condition block. (Edvard's
+`commands.xml` is an Elite Dangerous keybinds file, not a VA profile — ignore it.)
+
+**The binary stores integer codes, not names.**  [SOLID] corinthian contains zero
+occurrences of `PressKey`/`Say`/`BeginCondition`/etc. as strings; `ActionType` and the
+condition fields are serialized as integers (the `01 00 00 00` in the keypress pattern =
+ActionType 1 = PressKey). A name-level decode therefore needs the int↔name enums.
+
+**Condition operand block, mapped across zoom + corinthian.** The token/evaluated operand
+of a comparison is preceded by two uint32 fields:
+
+```
+… [uint32 A] [uint32 B] [uint32 len]["{TOKEN}"] …
+```
+
+- **B — inferred `ConditionStartValueType`.** Argued from *stability*, not XML field order:
+  across every `{TXT:…}` operand B is fixed at **1** (82×), and across `{LASTSPOKENCMD}`
+  also **1** (47×) — both Text — while A ranges over 2–12+. A stable B with a variable A
+  fits B = value *type*, A = *operator*.
+  - **Text = 1** — well supported.
+  - **Boolean — unresolved.** `{BOOL:…}` operands split between B=2 (7×) and B=3 (5×). No
+    clean code; do **not** assert Boolean = 2.
+  - **INT / DEC — inconclusive** here: in these profiles those tokens occur inside `Say`
+    text, not as condition operands, so B reads as the noise floor.
+- **A — inferred `ConditionStartOperator`.** A small-int enum (2–12+ for text conditions).
+  The operator *names* (equals / contains / greater-than / is-true …) cannot be assigned
+  without a matched XML.
+- **B = 0 is the noise floor.**  [SOLID] A token embedded in `Say` text has zero-padding
+  before it, so it reads B = 0. This is why every kind shows spurious 0s — and why "which
+  tokens are actually conditions" cannot be answered by scanning, only by walking the
+  object tree. Same lesson as the keypress aliasing.
+
+**Operand order** (from zoom): the `A,B` pair precedes the **token** operand specifically.
+The *literal* side of the comparison (`out`) has no such prefix — it is `FF`-padded then
+`03 00 00 00 "out"` — and the pair sits *between* the literal and the token. So the pair is
+a property of the token operand, not of every operand.
+
+## Still open — all gated on one input
+
+Remaining unknowns: the `ConditionStartOperator` enum names, the INT/DEC
+`ConditionStartValueType` codes, the byte position of `IndentLevel`/`Ordinal` within a
+`CommandAction`, the object type-code enum, and the member-table base (rel offset like 331).
+
+Every one is resolved cheaply by a **matched pair** — the *same* profile exported from
+VoiceAttack in both binary `.vap` and uncompressed XML. The XML names every field the
+binary encodes as an integer, so one aligned read replaces all further byte-staring.
+Producing that pair needs VoiceAttack itself; it cannot be reconstructed from the binaries
+alone. The semantic decode and record layout above already explain *how it decodes* — the
+matched pair is what a generic decoder *implementation* would require.
 
 ## Reference offsets (zoom-if-else, decompressed)
 
