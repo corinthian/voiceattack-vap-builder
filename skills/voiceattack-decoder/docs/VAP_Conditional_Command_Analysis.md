@@ -107,22 +107,52 @@ with its own GUID + offset table). Evidence: the action objects' offset tables a
 only in a per-instance head value (347 vs 331) — i.e. a shared type-level member layout
 emitted per instance.
 
-**[OPEN]** — the two things still needed for a *generic* conditional decoder:
-1. What the member offsets are relative to (object base? a section base? absolute?).
-2. Where the object **type tag** lives (what distinguishes PressKey from a
-   BeginCondition / token-compare object).
+## Triangulation results (numkeys, five single-key commands)  [SOLID]
 
-## How to crack the open items — triangulation
+Method: `numkeys-Profile.vap` has five near-identical single-key commands
+(`num -`, `num *`, `num .`, `num /`, `num +`). Each record spans 929 bytes (GUID-to-GUID).
+Aligning all five at their GUID start and computing a constant-vs-variable byte mask
+isolates the type **schema** (constant) from **instance** data (variable).
 
-Do not infer the member-table semantics from this one command. Diff the member-offset
-tables across the dozens of command/action objects already available in
-`base profile-Profile.vap`, `numkeys-Profile.vap`, and `corinthian-4-Profile.vap`:
+**Finding 1 — member offsets are object-relative, not absolute.** All five commands are
+`count = 1`, and the single stored property value is **331 in every record**, despite each
+record sitting 929 bytes farther into the file. An absolute file offset would increase by
+929 each time; a constant value proves the offset is intrinsic/relative. (What exact base
+331 is measured from is still **[OPEN]** — no tested base lands on a clean landmark.)
 
-- Entries **constant across all instances** are the type schema.
-- Entries that **vary** track position/size; comparing two objects at known-different
-  offsets reveals whether the values are absolute or relative.
+**Finding 2 — the single-key command template.** The 929-byte record is byte-constant
+except for these positions (offsets relative to the command GUID):
 
-That is the deferred "container walk" done empirically rather than by staring at one record.
+| rel | size | varies as | meaning |
+|-----|------|-----------|---------|
+| 0 | 16 | unique GUID | command Id |
+| 24 | 1 | `2d/2a/2e/2f/2b` | the phrase's trailing char (inside `num X`) |
+| 169 | 16 | unique GUID | nested sub-object Id |
+| 209 | 1 | `6D/6A/6E/6F/6B` | **keypress VK code** (SUBTRACT/MULTIPLY/DECIMAL/DIVIDE/ADD) |
+| 479 | 16 | unique GUID | nested sub-object Id |
+
+Everything else in the front of the record is fixed schema. So the VK lives at a fixed
+offset **inside the keypress object's template** — no scanning needed once the object is
+located. (This is the numkeys template specifically; offsets differ per command shape.)
+
+**Finding 3 — three GUID-tagged objects per command.** Each command carries three distinct
+Id GUIDs (rel 0, 169, 479), and each occurs exactly once in the file. They are unique
+object Ids, not cross-references. This confirms the recursive envelope: a command nests
+sub-objects (action-sequence / action), each with its own Id.
+
+**Finding 4 [INFERRED] — candidate type tag.** The constant uint32 `0xF1886E09`
+(bytes `09 6e 88 f1`) appears in the action region of *both* numkeys and zoom, near the
+keypress data. It is a plausible class/type identifier, but its role is unconfirmed.
+
+### Still open after triangulation
+- The exact base the relative offset (331) is measured from.
+- Confirming the object **type tag** (candidate: `0xF1886E09`) and enumerating type codes
+  (PressKey vs BeginCondition vs token-compare).
+- The ascending 2-byte table in the record tail (rel ~589+), likely a container-level
+  offset table rather than keypress payload.
+
+These remaining items are what a *generic* conditional decoder (code) would need. The
+semantic decode and the record layout above are sufficient to explain "how it decodes."
 
 ## Reference offsets (zoom-if-else, decompressed)
 
