@@ -54,8 +54,8 @@ Bytes 968–1042:
 | 968 | `ff ff ff ff` | prior-field terminator | SOLID |
 | 972 | `03 00 00 00` + `out` | length-prefixed literal operand | SOLID |
 | 979–1014 | `ff…` / `00…` runs | empty/optional members, null-padded | SOLID |
-| 1015 | `02 00 00 00` | operator / comparison-type code | INFERRED |
-| 1019 | `01 00 00 00` | operand-kind code | INFERRED |
+| 1015 | `02 00 00 00` | field A — per-condition (group/ordinal?), *not* the operator | INFERRED |
+| 1019 | `01 00 00 00` | `ConditionStartOperator` = 1 = **contains** (confirmed in VA UI) | GROUND-TRUTH |
 | 1023 | `0f 00 00 00` + `{LASTSPOKENCMD}` | length-prefixed token operand | SOLID |
 | 1042 | `06 00 00 00` | token-type code (not a string length — followed by zeros) | INFERRED |
 
@@ -161,29 +161,33 @@ occurrences of `PressKey`/`Say`/`BeginCondition`/etc. as strings; `ActionType` a
 condition fields are serialized as integers (the `01 00 00 00` in the keypress pattern =
 ActionType 1 = PressKey). A name-level decode therefore needs the int↔name enums.
 
-**Condition operand block, mapped across zoom + corinthian.** The token/evaluated operand
-of a comparison is preceded by two uint32 fields:
+**Condition operand block, mapped across zoom + corinthian, anchored by ground truth.**
+VoiceAttack's UI reports zoom's condition as **`{LASTSPOKENCMD}` contains "out"** (and the
+other branch `… contains "in"`). In the bytes, the token operand is preceded by two uint32
+fields:
 
 ```
-… [uint32 A] [uint32 B] [uint32 len]["{TOKEN}"] …
+… [uint32 A] [uint32 B = ConditionStartOperator] [uint32 len]["{TOKEN}"] …
 ```
 
-- **B — inferred `ConditionStartValueType`.** Argued from *stability*, not XML field order:
-  across every `{TXT:…}` operand B is fixed at **1** (82×), and across `{LASTSPOKENCMD}`
-  also **1** (47×) — both Text — while A ranges over 2–12+. A stable B with a variable A
-  fits B = value *type*, A = *operator*.
-  - **Text = 1** — well supported.
-  - **Boolean — unresolved.** `{BOOL:…}` operands split between B=2 (7×) and B=3 (5×). No
-    clean code; do **not** assert Boolean = 2.
-  - **INT / DEC — inconclusive** here: in these profiles those tokens occur inside `Say`
-    text, not as condition operands, so B reads as the noise floor.
-- **A — inferred `ConditionStartOperator`.** A small-int enum (2–12+ for text conditions).
-  The operator *names* (equals / contains / greater-than / is-true …) cannot be assigned
-  without a matched XML.
+- **B (immediately before the value) = `ConditionStartOperator`.**  Ground-truth anchored:
+  both zoom branches read "contains" and both have **B = 1**, while A differs (2 vs 4). An
+  operator shared by both branches must be the *invariant* field — so B is the operator and
+  **contains = 1**. Cross-checks: for a *fixed* operand type (`{TXT:…}`) B is not constant
+  (1×82, 2×8, 3×1, 5×1), so it cannot be the value *type* — it tracks the comparison. And
+  `{BOOL:…}` shows exactly two values, **B = 2 (7×) / 3 (5×)** — the two boolean operators
+  (is-true / is-false), not noise.
+  - Named so far: **contains = 1**; boolean operators = **2 / 3** (which is which still
+    needs the pair). `equals`, `greater-than`, etc. remain unnamed.
+- **A (before B) is neither operator nor value type.**  It differs between two
+  same-operator branches (2 vs 4) and varies for a fixed operand type, so it is neither.
+  Candidate: `ConditionGroup` / `Ordinal` / a per-condition index — unresolved.
+- **Value-type location is reopened.**  An earlier draft read B as `ConditionStartValueType`
+  with Text = 1. The ground-truth "contains" shows that "1" was the *operator*, not the
+  type. Where the value type is stored, and its codes, are now unknown.
 - **B = 0 is the noise floor.**  [SOLID] A token embedded in `Say` text has zero-padding
-  before it, so it reads B = 0. This is why every kind shows spurious 0s — and why "which
-  tokens are actually conditions" cannot be answered by scanning, only by walking the
-  object tree. Same lesson as the keypress aliasing.
+  before it, so it reads B = 0 — which is why scanning cannot tell condition operands from
+  Say-text tokens. Only an object-tree walk can. Same lesson as the keypress aliasing.
 
 **Operand order** (from zoom): the `A,B` pair precedes the **token** operand specifically.
 The *literal* side of the comparison (`out`) has no such prefix — it is `FF`-padded then
@@ -192,9 +196,12 @@ a property of the token operand, not of every operand.
 
 ## Still open — all gated on one input
 
-Remaining unknowns: the `ConditionStartOperator` enum names, the INT/DEC
-`ConditionStartValueType` codes, the byte position of `IndentLevel`/`Ordinal` within a
-`CommandAction`, the object type-code enum, and the member-table base (rel offset like 331).
+Remaining unknowns: the rest of the `ConditionStartOperator` names (`contains = 1` and the
+two boolean operators `2/3` are known; `equals`, `greater-than`, … are not, and 2-vs-3
+is not yet assigned to is-true/is-false); **where the value type is stored** and its codes
+(reopened — "1" turned out to be the operator); the byte position of `IndentLevel` /
+`Ordinal` within a `CommandAction`; the object type-code enum; and the member-table base
+(rel offset like 331).
 
 Every one is resolved cheaply by a **matched pair** — the *same* profile exported from
 VoiceAttack in both binary `.vap` and uncompressed XML. The XML names every field the
