@@ -62,15 +62,12 @@ Bytes 968–1042:
 | 968 | `ff ff ff ff` | prior-field terminator | SOLID |
 | 972 | `03 00 00 00` + `out` | length-prefixed literal operand | SOLID |
 | 979–1014 | `ff…` / `00…` runs | empty/optional members, null-padded | SOLID |
-| 1015 | `02 00 00 00` | field A = condition subtype: **2 = Begin** (the "in" branch reads 4 = Else-If) | INFERRED |
-| 1019 | `01 00 00 00` | `ConditionStartOperator` = 1 = **Contains** (confirmed in VA UI) | GROUND-TRUTH |
+| 1015 | `02 00 00 00` | 0-based index of the paired closing action (the Else If @ index 2 closes this Begin) — earlier misread as "subtype 2 = Begin" | CORRECTED 2026-07-07 |
+| 1019 | `01 00 00 00` | unknown member (reads 1 in both zoom branches; counts 1..10 in the conditionals probe) — earlier misread as "operator, Contains = 1" | OPEN |
 | 1023 | `0f 00 00 00` + `{LASTSPOKENCMD}` | length-prefixed token operand (the left/evaluated value) | SOLID |
-| 1042 | `06 00 00 00` | token-type code (not a string length — followed by zeros) | INFERRED |
+| 1042 | `06 00 00 00` | **`ConditionStartOperator` = 6 = Contains** — 0-indexed dropdown position, sits immediately after the token operand; earlier misread as a token-type code | GROUND-TRUTH 2026-07-07 |
 
-The "Else If" branch repeats this shape (literal `in` @1650, token `{LASTSPOKENCMD}` @1700)
-with **one** difference: field A = **4** instead of **2**. Since branch 1 is `Begin` and
-branch 2 is `Else If`, A encodes the condition subtype, while the operator field B stays
-**1** (Contains) for both.
+The "Else If" branch repeats this shape (literal `in` @1650, token `{LASTSPOKENCMD}` @1700) with token−8 reading **4** instead of **2** — the 0-based index of the action that closes each block (branch 1 is closed by the Else If at index 2, branch 2 by the End at index 4), i.e. `ConditionPairing`, not a subtype. Both branches read operator **6 = Contains** at token_end (@1042 / @1719). An earlier draft read token−8 as a Begin/Else-If subtype and token−4 as the operator; the 2026-07-07 conditionals probe refuted both — see that session update.
 
 ## Keypress action record  [SOLID]
 
@@ -178,24 +175,9 @@ fields:
 … [uint32 A] [uint32 B = ConditionStartOperator] [uint32 len]["{TOKEN}"] …
 ```
 
-- **B (immediately before the value) = `ConditionStartOperator`.**  Ground-truth anchored:
-  both zoom branches read "contains" and both have **B = 1**, while A differs (2 vs 4). An
-  operator shared by both branches must be the *invariant* field — so B is the operator and
-  **contains = 1**. Cross-checks: for a *fixed* operand type (`{TXT:…}`) B is not constant
-  (1×82, 2×8, 3×1, 5×1), so it cannot be the value *type* — it tracks the comparison. And
-  `{BOOL:…}` shows exactly two values, **B = 2 (7×) / 3 (5×)** — the two boolean operators
-  (is-true / is-false), not noise. (Review 2026-07-07, CSV cross-check: {BOOL:} conditions serialize as Equals 'True' / Equals 'False' / Does Not Equal 'True'; the ten distinct combos split ~5 semantically-true / ~5 semantically-false — consistent with is-true/is-false for 2/3, inconsistent with an Equals/Does-Not-Equal split, which would be ~9/1.)
-  - Named so far: **contains = 1**; boolean operators = **2 / 3** (which is which still
-    needs the pair). `equals`, `greater-than`, etc. remain unnamed.
-- **A (before B) = condition subtype (Begin / Else-If / …).**  Ground truth: branch 1 is
-  `Begin` (A = 2), branch 2 is `Else If` (A = 4) — so A marks the condition-action kind,
-  which is why it varies across a fixed operand type. The compare *type* (Text / Boolean /
-  Numeric) may be folded into this same code — "Begin **Text** Compare" vs "Begin **Boolean**
-  Compare" are distinct action kinds — which would mean value type is not a separate field.
-  Unconfirmed; needs a Boolean-condition A value to test.
-- **Value-type location is reopened.**  An earlier draft read B as `ConditionStartValueType`
-  with Text = 1. The ground-truth "contains" shows that "1" was the *operator*, not the
-  type. Where the value type is stored, and its codes, are now unknown.
+- **The token−4 / token−8 pair is NOT operator/subtype — both readings REFUTED (2026-07-07, conditionals probe).** An earlier draft argued B (token−4) = operator with contains = 1, anchored on both zoom branches reading B = 1 — but both branches share the operator AND the value type, so invariance could not separate the candidates. The conditionals probe (ten Text operators, one per block) shows token−4 counting 1..10 while the real operator sits at **token_end**; see that session update for the full enum. The corinthian B-value statistics (1×82, 2×8… for `{TXT:}`; 2/3 for `{BOOL:}`) and the "boolean operators = 2/3 (is-true / is-false)" reading — including the same-day CSV cross-check note that endorsed it — were artifacts of the same misassignment: boolean token compares use the shared Text enum (Equals = 0 / Does Not Equal = 1) against quoted 'True'/'False' literals, and the binary matches the CSV exactly (the profile's single cargo-scoop Does Not Equal is the single token_end = 1). What token−4 actually is remains OPEN (1, 1 in zoom; 1..10 in conditionals; mostly 1 in corinthian).
+- **Token−8 = `ConditionPairing`, the 0-based index of the block's closing action — INFERRED, strong.** zoom: Begin reads 2 (its Else If's index), Else If reads 4 (the End's index). conditionals: the ten Begins read 3, 6, …, 30 — each block's own End. This also explains the corinthian token−8 spread (2,3,4,5,6,9,15,21) that killed the "subtype" reading. Begin / Else If / Else / End subtype codes are therefore still unlocated.
+- **Value-type location still open.** Neither token−4 nor token_end tracks Text/Boolean/Integer. In the conditionals probe every nearby slot is constant across the ten blocks — expected, since all ten are Text compares; a mixed-type probe is the discriminator (probe 2).
 - **B = 0 is the noise floor.**  [SOLID] A token embedded in `Say` text has zero-padding
   before it, so it reads B = 0 — which is why scanning cannot tell condition operands from
   Say-text tokens. Only an object-tree walk can. Same lesson as the keypress aliasing.
@@ -207,12 +189,7 @@ a property of the token operand, not of every operand.
 
 ## Still open — all gated on one input
 
-Remaining unknowns: the rest of the `ConditionStartOperator` names (`contains = 1` and the
-two boolean operators `2/3` are known; `equals`, `greater-than`, … are not, and 2-vs-3
-is not yet assigned to is-true/is-false); **where the value type is stored** and its codes
-(reopened — "1" turned out to be the operator); the byte position of `IndentLevel` /
-`Ordinal` within a `CommandAction`; the object type-code enum; and the member-table base
-(rel offset like 331).
+Remaining unknowns (updated 2026-07-07): the **Text-compare operator enum is now fully known** — 0-indexed dropdown order, `Contains = 6`, see the conditionals-probe session update. Still open: the Integer / Decimal / Boolean-variable dropdown enums; the operator field position for pool-referenced local-var conditions; **where the value type is stored** and its codes; the byte position of `IndentLevel` / `Ordinal` / the Begin-ElseIf-Else-End subtype within a `CommandAction`; the object type-code enum; and the member-table base (rel offset like 331).
 
 Every one is resolved cheaply by a **matched pair** — the *same* profile exported from
 VoiceAttack in both binary `.vap` and uncompressed XML. The XML names every field the
@@ -246,7 +223,7 @@ matched pair is what a generic decoder *implementation* would require.
 Ground truth this round: `reference profiles/corinthian-4-Profile.{vap,csv}` (both gitignored, local). The CSV lists every command's category + full English action sequence, including **882 compare-conditions across the 479 rows** (111 across the 193 unique action sequences; compound `Begin Condition : (…)` blocks not counted). An earlier draft said "258 conditions" — not reproducible under any counting rule tried on review (2026-07-07); superseded by the figures above. Operator vocabulary observed, by compare type: **Text** — Contains, Equals, Starts With, Does Not Equal; **Boolean (local vars)** — Equals True only (the operator "Equals False" never occurs); **{BOOL:} tokens** — serialized as compares against quoted literals: Equals 'True', Equals 'False', Does Not Equal 'True'; **Integer** — Has Not Been Set, Is Greater Than, Is Less Than, Equals, Does Not Equal.
 
 ### Confirmed
-- **Contains = ConditionStartOperator code 1** — from the **zoom** ground truth only. The corinthian `{LASTSPOKENCMD}`→i4=1 correlation is **confounded** (that token is ~97% Contains, so "1 precedes it" may track the token, not the operator). Do not cite the correlation as proof.
+- ~~Contains = ConditionStartOperator code 1~~ — **REFUTED 2026-07-07** by the conditionals probe: the token−4 field that read 1 is not the operator. The operator sits at **token_end** and **Contains = 6** (full enum in the conditionals-probe session update below). The caution recorded here about the corinthian correlation being confounded was warranted — about this bullet's own anchor.
 - **The token-adjacency model is dead.** The operator/subtype are NOT at fixed offsets before the operand string. Proof: across corinthian conditions the byte at `token−8` (the zoom "subtype" slot) takes values 2,3,4,5,6,9,15,21 — no Begin=2/ElseIf=4 pattern. Operator/subtype are object members at member-table offsets, not adjacent fields.
 - **Near-twin diff works; structure is byte-stable relative to `phrase_end` within a command family.** Diffing `throttle 25/50/75/100` (identical except key + literal) pinpoints, relative to `phrase_end`:
   - **+184 = keypress VK code** — `[112,115,113,114]` = F1,F4,F2,F3 (matches 25/100/50/75).
@@ -259,3 +236,34 @@ Ground truth this round: `reference profiles/corinthian-4-Profile.{vap,csv}` (bo
 - Operator codes beyond Contains=1 (Equals, Starts With, Does Not Equal, Is Greater/Less Than, Has Not Been Set, Equals True/False). The cross-operator contrast is ambiguous because the compare value can only be reached reliably by walking the action objects (the var-name anchor hits the pool). 
 - ConditionStartValueType, ConditionPairing/Group, IndentLevel, Begin/ElseIf/Else/End subtype codes.
 - **The unlock:** dereference the shared command-member offsets (`[32,140,156,160]` constant across zoom `[347,…]` and throttle `[331,…]`) to walk actions in order, read each ActionType, match a known sequence (throttle = PressKey, BeginIntegerCompare, SetSmallInt, EndCondition, SetInteger) to fix the BeginCompare ActionType code, then read operator/type/subtype at consistent object-relative member offsets. This finds ALL conditions (inline and by-ref) across every command. Not attempted this round (higher-cost, previously ambiguous) — fund explicitly.
+
+---
+
+## Session update — conditionals probe (2026-07-07): Text operator enum cracked
+
+Ground truth: `reference profiles/conditionals-Profile.{vap,csv}` + VA UI screenshot (authored probe, gitignored/local). One command ("New Command", action-count field 31 = 1 SetText + 10 × Begin/PressSpace/End — fifth profile confirming count = actions), sweeping all ten Text-compare operators in dropdown order, each literal operand naming its own operator (`Equals 'equals'`, `Contains 'contains'`, …) — the binary is self-labeling.
+
+**Design confound and its resolution.** Operator order = block order, so any per-block counter mimics the enum: token−8 steps 3,6,…,30; token−4 counts 1..10; token_end counts 0..9. Cross-profile tiebreak: zoom's two Contains branches read **token_end = 6** (while token−4 reads 1, 1), and corinthian's `{BOOL:}` conditions read token_end = 0 everywhere except the profile's single Does Not Equal (cargo scoop), which reads 1 — exact CSV correlation. token_end is the operator.
+
+**[GROUND-TRUTH] `ConditionStartOperator` sits immediately after the inline token operand (token_end), coded as the 0-indexed dropdown position:**
+
+| code | operator |
+|------|----------|
+| 0 | Equals |
+| 1 | Does Not Equal |
+| 2 | Starts With |
+| 3 | Does Not Start With |
+| 4 | Ends With |
+| 5 | Does Not End With |
+| 6 | Contains |
+| 7 | Does Not Contain |
+| 8 | Has Been Set |
+| 9 | Has Not Been Set |
+
+Boolean token compares (`{BOOL:…}`) share this enum, comparing against quoted 'True'/'False' literals (Equals = 0 and Does Not Equal = 1 observed in corinthian).
+
+**Refuted by this probe** (all previously recorded as confirmed/inferred): Contains = 1 (zoom token−4 misread); token−8 = Begin/Else-If subtype (it is `ConditionPairing` — the 0-based index of the block's closing action: zoom 2/4, conditionals 3,6,…,30, corinthian's 2,3,4,5,6,9,15,21 spread); B = 2/3 = boolean is-true/is-false operators.
+
+**Noise floor, again.** Equals = 0 aliases zero padding: a token in a non-condition context (Say / Write / Set-text operand) can read token_end = 0 or FF-run. Only nonzero, non-FF token_end values are trustworthy from a flat scan — reading Equals conditions reliably still needs the object walk. Same lesson as the keypress aliasing.
+
+**Still open after this probe:** what token−4 is (1, 1 in zoom; 1..10 in conditionals; mostly 1 in corinthian); the value-type field and codes; Integer / Decimal / Boolean-variable dropdown enums; operator position for pool-referenced local-var conditions; Begin/Else If/Else/End subtype codes and IndentLevel. Probe profile #2 is specified in `Conditionals_Probe_2_Spec.md`.

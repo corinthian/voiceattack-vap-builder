@@ -32,11 +32,12 @@ Full writeup: `skills/voiceattack-decoder/docs/VAP_Conditional_Command_Analysis.
 
 **Cracked**
 - **Near-twin diff is the working technique.** Diffing `throttle 25/50/75/100` (identical but for key + literal) pinpoints, relative to `phrase_end`: **+184 = keypress VK** (F1–F4) and **+580 = ConditionStartValue** (integer literal 1/2/3/4). Structure is byte-stable within a command family.
-- **Contains = ConditionStartOperator code 1** — confirmed from **zoom** ground truth only. The corinthian `{LASTSPOKENCMD}`→1 correlation is confounded (that token is ~97% Contains) and is not cited as proof.
+- **Full Text-compare operator enum (2026-07-07, authored conditionals probe).** `ConditionStartOperator` sits at **token_end** (immediately after the inline token operand), coded as the 0-indexed dropdown position: Equals=0 … **Contains=6** … Has Not Been Set=9. Confirmed across conditionals (10/10 sequential), zoom (Contains=6 in both branches), and corinthian `{BOOL:}` conditions (exact CSV correlation, incl. the single Does Not Equal=1). The earlier **Contains=1 is refuted** — that field (token−4) is an unidentified counter.
+- **token−8 = ConditionPairing** (0-based index of the block's closing action) — explains zoom's 2/4 (previously misread as Begin/ElseIf subtype, now refuted) and corinthian's 2,3,4,5,6,9,15,21 spread.
 - **Two operand mechanisms.** Global tokens (`{LASTSPOKENCMD}`, `{TXT:}`, `{BOOL:}`) stored inline; local vars (`[throt]`, `[i]`) live in a declaration pool and are referenced via wrapper `[01][len][name][01]`.
-- **Token-adjacency model is dead** — the `token−8` "subtype" slot takes 2,3,4,5,6,9,15,21 across corinthian; operator/subtype are object members at member-table offsets, not adjacent fields.
+- **Noise floor caveat:** Equals=0 aliases zero padding for tokens in non-condition contexts, so flat-scan reads of Equals are unreliable; the object walk is still the clean route.
 
-**Open** — the full operator enum (Equals, Starts With, Does Not Equal, Is Greater/Less Than, Has Not Been Set, Equals True/False), value-type, subtype codes, IndentLevel. Every clean route to a second operator's value hits the same wall: the variable-name anchor lands on the declaration pool, not the compare object. Stopped here per the stop-after-two-ambiguous-contrasts rule.
+**Open** — Integer/Decimal/Boolean-variable dropdown enums, operator position for pool-referenced local-var conditions, value-type field, Begin/ElseIf/Else/End subtype codes, IndentLevel, token−4's meaning. Probe #2 (spec: `skills/voiceattack-decoder/docs/Conditionals_Probe_2_Spec.md`) targets all of these except the member-table base.
 
 **The unlock (not yet attempted — a research build)**: dereference the shared command-member offsets (`[32,140,156,160]`, constant across zoom `[347,…]` and throttle `[331,…]`) to **walk action objects in order**, read each ActionType, match throttle's known 5-action sequence to fix the BeginCompare ActionType code, then read operator/type/subtype at consistent member offsets. Finds every condition across all commands and yields the full enum.
 
@@ -60,5 +61,5 @@ Full writeup: `skills/voiceattack-decoder/docs/VAP_Conditional_Command_Analysis.
 - Bug report: `skills/voiceattack-decoder/docs/Decoder_Accuracy_Findings_corinthian_CSV.md`
 - Condition analysis: `skills/voiceattack-decoder/docs/VAP_Conditional_Command_Analysis.md`
 - Fix plan (already executed): `skills/voiceattack-decoder/docs/Decoder_Category_Anchor_Fix_Plan.md`
-- Ground-truth pair (gitignored): `reference profiles/corinthian-4-Profile.{vap,csv}`, `reference profiles/zoom-if-else.vap` (anchors Contains=1), `reference profiles/Cities Skylines II-Profile.csv` + zoom screenshot
+- Ground-truth pairs (gitignored): `reference profiles/corinthian-4-Profile.{vap,csv}`, `reference profiles/conditionals-Profile.{vap,csv}` (authored operator probe — cracked the Text enum), `reference profiles/zoom-if-else.vap`, `reference profiles/Cities Skylines II-Profile.csv` + screenshots
 - Scratchpad prototypes (session): `expand_match.py`, `sweep.py`/`sweep2.py`, `crack_operator.py`/`crack_op2.py`, twin-diff + dump scripts under the session scratchpad dir
