@@ -16,20 +16,25 @@ Every offset below is a byte position in the **decompressed** buffer
 Each finding is tagged: **[SOLID]** = read directly and cross-checked; **[INFERRED]** =
 consistent with the bytes but not proven; **[OPEN]** = not yet cracked.
 
-## What the command is  [SOLID]
+## What the command is  [SOLID — ground truth]
+
+Confirmed against VoiceAttack's own "Edit a Command" UI and its CSV export
+(`reference profiles/Cities Skylines II-Profile.csv`). The action sequence is a single
+**if / else-if / end** block — five `CommandAction`s:
 
 ```
-Command "zoom [out; in]"          category: camera
-  ├─ if  {LASTSPOKENCMD} ~ "out"  →  PressKey F (VK 0x46), duration 1.5s
-  └─ if  {LASTSPOKENCMD} ~ "in"   →  PressKey R (VK 0x52), duration 1.5s
+Command "zoom [out; in]"                       category: camera
+  1. Begin Text Compare : [{LASTSPOKENCMD}] Contains 'out'
+  2.     PressKey F (VK 0x46), hold 1.5s
+  3. Else If Text Compare : [{LASTSPOKENCMD}] Contains 'in'
+  4.     PressKey R (VK 0x52), hold 1.5s
+  5. End Condition
 ```
 
-Two conditional branches, each comparing the token `{LASTSPOKENCMD}` against a string
-literal, then executing one keypress. The keypress `F` (byte 1315) lies between the two
-`{LASTSPOKENCMD}` tokens (1023 and 1700), so it provably belongs to the "out" branch;
-`R` follows the second token, so it belongs to the "in" branch. The comparison direction
-(which operand is left/right) and the exact match semantics ("contains" vs "equals") are
-**[INFERRED]**, not proven.
+This corrects an earlier draft that read it as *two independent `if`s*. It is one condition
+block: `Begin` + `Else If` + `End`. Operator = **Contains**, comparison type = **Text**,
+left operand = the token `{LASTSPOKENCMD}`, right operand = the literal. The keypresses
+"hold for 1.5 seconds" — matching the Duration double found in the bytes.
 
 ## Command header  [SOLID]
 
@@ -38,12 +43,15 @@ literal, then executing one keypress. The keypress `F` (byte 1315) lies between 
 | 750 | `7e38f126-2a11-4418-b0e3-1e064917e1d6` | command GUID (Id) |
 | 766 | `0e 00 00 00` | phrase length = 14 |
 | 770 | `zoom [out; in]` | phrase (UTF-8) |
-| 784 | `05 00 00 00` | property count = 5 |
-| 788 | `347, 32, 140, 156, 160` | property offset table (5 × uint32) |
+| 784 | `05 00 00 00` | **action count = 5** (the five CommandActions above) |
+| 788 | `347, 32, 140, 156, 160` | per-action offset table (5 × uint32) |
 
-Note: the uint32 series does **not** stop after 5 entries — an ascending run
-(`32,140,156,160,168,176,180,…`) continues to ~912, followed by a 16-byte GUID at 928.
-So "count = 5" is not "5 raw byte offsets into the action data." See *Object envelope*.
+**Count = number of actions** [SOLID — ground truth resolves the earlier puzzle]. The `5`
+is the ActionSequence length: Begin / PressF / ElseIf / PressR / End. Cross-checks: numkeys
+single-key commands are count = 1 (one keypress); `num 0-9` is count = 10 (ten keypresses).
+The `[347, 32, 140, 156, 160]` are the per-action offsets; the longer ascending run that
+follows belongs to the first action object's own member table (see *Object envelope*), not
+the command's table.
 
 ## Condition operand encoding — "out" branch  [mixed]
 
@@ -54,13 +62,15 @@ Bytes 968–1042:
 | 968 | `ff ff ff ff` | prior-field terminator | SOLID |
 | 972 | `03 00 00 00` + `out` | length-prefixed literal operand | SOLID |
 | 979–1014 | `ff…` / `00…` runs | empty/optional members, null-padded | SOLID |
-| 1015 | `02 00 00 00` | field A — per-condition (group/ordinal?), *not* the operator | INFERRED |
-| 1019 | `01 00 00 00` | `ConditionStartOperator` = 1 = **contains** (confirmed in VA UI) | GROUND-TRUTH |
-| 1023 | `0f 00 00 00` + `{LASTSPOKENCMD}` | length-prefixed token operand | SOLID |
+| 1015 | `02 00 00 00` | field A = condition subtype: **2 = Begin** (the "in" branch reads 4 = Else-If) | INFERRED |
+| 1019 | `01 00 00 00` | `ConditionStartOperator` = 1 = **Contains** (confirmed in VA UI) | GROUND-TRUTH |
+| 1023 | `0f 00 00 00` + `{LASTSPOKENCMD}` | length-prefixed token operand (the left/evaluated value) | SOLID |
 | 1042 | `06 00 00 00` | token-type code (not a string length — followed by zeros) | INFERRED |
 
-The "in" branch repeats this exact shape (literal `in` @1650, token `{LASTSPOKENCMD}`
-@1700), confirming a fixed per-condition layout.
+The "Else If" branch repeats this shape (literal `in` @1650, token `{LASTSPOKENCMD}` @1700)
+with **one** difference: field A = **4** instead of **2**. Since branch 1 is `Begin` and
+branch 2 is `Else If`, A encodes the condition subtype, while the operator field B stays
+**1** (Contains) for both.
 
 ## Keypress action record  [SOLID]
 
@@ -179,9 +189,12 @@ fields:
   (is-true / is-false), not noise.
   - Named so far: **contains = 1**; boolean operators = **2 / 3** (which is which still
     needs the pair). `equals`, `greater-than`, etc. remain unnamed.
-- **A (before B) is neither operator nor value type.**  It differs between two
-  same-operator branches (2 vs 4) and varies for a fixed operand type, so it is neither.
-  Candidate: `ConditionGroup` / `Ordinal` / a per-condition index — unresolved.
+- **A (before B) = condition subtype (Begin / Else-If / …).**  Ground truth: branch 1 is
+  `Begin` (A = 2), branch 2 is `Else If` (A = 4) — so A marks the condition-action kind,
+  which is why it varies across a fixed operand type. The compare *type* (Text / Boolean /
+  Numeric) may be folded into this same code — "Begin **Text** Compare" vs "Begin **Boolean**
+  Compare" are distinct action kinds — which would mean value type is not a separate field.
+  Unconfirmed; needs a Boolean-condition A value to test.
 - **Value-type location is reopened.**  An earlier draft read B as `ConditionStartValueType`
   with Text = 1. The ground-truth "contains" shows that "1" was the *operator*, not the
   type. Where the value type is stored, and its codes, are now unknown.
