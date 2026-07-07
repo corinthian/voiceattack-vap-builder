@@ -35,3 +35,19 @@ Re-running the decoder on `numkeys-Profile.vap`: six of seven commands decode ca
 
 ## Scope note
 This is analysis. Applying any fix to `vap_decoder.py` requires explicit authorization. Fix prototypes belong in scratchpad and must be verified against all reference profiles (recovery **and** no new false-positive commands) before proposing application.
+
+## Outcome (2026-07-07 — fixes authorized, implemented, verified)
+
+Findings 1–4 are fixed in `vap_decoder.py`, following the scope note's path: scratchpad prototype → verification against all four reference profiles → applied to source → re-verified. Results against the CSV oracle:
+
+- **479/479 rows matched** (was 443/479) — the set-fire command recovered; corinthian decodes 201 commands, matching the profile header's own count field.
+- **Category mismatches 37 → 1** — only the zoom-out anomaly (Finding 5) remains.
+- **Phantom keypresses 19 → 0**, with no real key lost on any profile.
+- **48 hold durations decoded** (0.01–12.0s observed); JSON emits `duration` only when it differs from the 0.1 default, XML always.
+
+Two discoveries during verification:
+
+1. **KeyDown/KeyUp records share the keypress marker.** "Press down X key" / "Release X key" actions (boost, cease fire, `[press; hold]` pairs) match the same `00 00 00 00 01 00 00 00` marker with the Duration slot **exactly 0.0** (all-zero bytes) — so "01 = ActionType PressKey" is not the whole story; down/up records either share the type or the field isn't ActionType. The phantom filter therefore accepts d==0.0 only when the record suffix verifies (VK zero-padded then FF-terminated within 6 bytes); one condition-operand phantom (`(return to main screen)`'s `[01][len]"none"` wrapper) also carries an all-zero slot and is rejected by the suffix rule. These records still decode as generic `keypress` — typing them as KeyDown/KeyUp needs the structural walk.
+2. **`find_mouse_actions` was nondeterministic** — it iterated the `MOUSE_CONTEXT_CODES` set, whose order is hash-randomized per process, so multi-mouse-action commands changed action order between runs. Fixed by sorting hits by byte position (also the positionally correct order).
+
+Still open: Finding 5 (zoom-out anomaly) and Finding 6 (numkeys VK-aliased categories — unchanged by these fixes, awaits the structural member walk).

@@ -159,28 +159,49 @@ def find_key_actions(data: bytes, start: int, end: int) -> list[dict]:
     """
     Find all key actions in a data range by pattern matching.
 
-    Key action pattern:
-    - 4 bytes: 00 00 00 00 (zeros)
-    - 4 bytes: 01 00 00 00 (action type = 1)
-    - 4 bytes: VK code (little-endian)
-    - 2 bytes: 00 00
-    - 6 bytes: FF FF FF FF FF FF (padding)
+    Key action record:
+    - 8 bytes at marker-12: IEEE-754 double key-hold Duration
+    - marker: 00 00 00 00 (zeros) + 01 00 00 00 (action type 1 = PressKey)
+    - 2 bytes at marker+8: VK code (little-endian uint16)
+    - suffix varies by profile (zero padding and/or FF run) and is NOT validated;
+      the Duration sanity check is the phantom filter instead. Condition objects
+      alias the 01 00 00 00 marker with garbage in the Duration slot (FF-runs,
+      denormals ~1e-304), while real records hold either a sane press time
+      (0.001-60s; observed 0.03-1.5) or exactly 0.0 (KeyDown/KeyUp-style
+      "press down X" / "release X" records - all-zero slot, no hold time).
+      See Decoder_Accuracy_Findings_corinthian_CSV.md Findings 3 and 4.
     """
     actions = []
-    # Pattern: 00 00 00 00 01 00 00 00 XX 00 00 00 00 00 FF FF
     pattern_prefix = b'\x00\x00\x00\x00\x01\x00\x00\x00'
 
     i = start
     while i < end - 16:
         if data[i:i+8] == pattern_prefix:
             vk_code = struct.unpack('<H', data[i+8:i+10])[0]
-            if 0 < vk_code < 0x200:  # Valid VK code range
+            dur_ok = False
+            duration = None
+            if i >= 12:
+                d = struct.unpack('<d', data[i-12:i-4])[0]
+                if d == 0.0:
+                    # KeyDown/KeyUp-style record: no hold time. Condition operands
+                    # can also alias an all-zero slot, so additionally require the
+                    # record suffix: VK zero-padded then FF-terminated within 6 bytes
+                    # (both observed real shapes; operand strings fail this).
+                    tail = data[i+10:i+16]
+                    dur_ok = tail[:2] == b'\xff\xff' or tail == b'\x00\x00\x00\x00\xff\xff'
+                elif 0.001 <= d <= 60:  # NaN/denormal/FF-run garbage all fail
+                    dur_ok = True
+                    duration = round(d, 4)
+            if 0 < vk_code < 0x200 and dur_ok:
                 key_name = VK_CODES.get(vk_code, f"VK_0x{vk_code:02X}")
-                actions.append({
+                action = {
                     'type': 'keypress',
                     'vk_code': vk_code,
                     'key': key_name
-                })
+                }
+                if duration is not None:
+                    action['duration'] = duration
+                actions.append(action)
                 i += 16  # Skip past this action
                 continue
         i += 1
@@ -196,8 +217,12 @@ def find_mouse_actions(data: bytes, start: int, end: int) -> list[dict]:
     - Followed by FF FF FF FF FF FF FF FF... padding
 
     Scroll actions have click count as IEEE 754 double at offset -20 from length prefix.
+
+    Hits are collected per context code, then sorted by byte position: set iteration
+    order is hash-randomized per process, so without the sort the action order of a
+    multi-mouse-action command changes from run to run.
     """
-    actions = []
+    hits = []
 
     # Look for each known context code
     for context_code in MOUSE_CONTEXT_CODES:
@@ -234,12 +259,12 @@ def find_mouse_actions(data: bytes, start: int, end: int) -> list[dict]:
                         except struct.error:
                             pass
 
-                actions.append(action)
+                hits.append((pos, action))
                 i = pos + len(pattern)
             else:
                 i = pos + 1
 
-    return actions
+    return [action for _pos, action in sorted(hits, key=lambda h: h[0])]
 
 
 def _guid_is_valid(guid_bytes: bytes) -> bool:
@@ -296,8 +321,18 @@ def _match_command_signature(data: bytes, pos: int) -> Optional[dict]:
     if table_end > n:
         return None
     offsets = struct.unpack('<%dI' % count, data[table_start:table_end])
-    if any(o >= n for o in offsets):
+    bad_idx = next((i for i, o in enumerate(offsets) if o >= n), None)
+    if bad_idx == 0:
         return None
+    if bad_idx is not None:
+        # count can overrun the true table length (corinthian 'set ... fire':
+        # count 37, 35 real entries, then child-GUID bytes read as offsets).
+        # Truncate at the first out-of-range entry and keep the command;
+        # detection does not depend on the table. Finding 1 in
+        # Decoder_Accuracy_Findings_corinthian_CSV.md.
+        offsets = offsets[:bad_idx]
+        count = bad_idx
+        table_end = table_start + count * 4
     # A run of identical offsets signals garbage; a single offset is legitimate.
     if count >= 2 and len(set(offsets)) == 1:
         return None
@@ -348,8 +383,9 @@ def _extract_category(data: bytes, start: int, end: int) -> str:
         if s.startswith('{') and s.endswith('}'):  # token operand, e.g. {LASTSPOKENCMD}
             continue
         low = s.lower()
-        if '\\' in s or '/' in s or '.exe' in low or '.wav' in low or s.startswith('*'):
-            continue  # path / window / sound operand
+        if '\\' in s or '.exe' in low or '.wav' in low or s.startswith('*'):
+            continue  # path / window / sound operand (a bare '/' is NOT a path
+            # indicator: 'flight/navigation' is a real category - Finding 2)
         if _VERSION_RE.match(s):
             continue  # version string
         candidate = s
@@ -468,6 +504,8 @@ def to_xml(profile: dict) -> str:
                 if action['type'] == 'keypress':
                     ET.SubElement(action_elem, 'Key').text = action['key']
                     ET.SubElement(action_elem, 'VKCode').text = f"0x{action['vk_code']:02X}"
+                    if 'duration' in action:
+                        ET.SubElement(action_elem, 'Duration').text = str(action['duration'])
                 elif action['type'] == 'mouse':
                     ET.SubElement(action_elem, 'ContextCode').text = action['context_code']
                     ET.SubElement(action_elem, 'GeneratorName').text = action['generator_name']
@@ -496,8 +534,15 @@ def to_json(profile: dict) -> str:
         if len(actions) == 1:
             action = actions[0]
             if action['type'] == 'keypress':
-                # Single key press - use simplified format
-                json_cmd['key'] = action['key'].lower()
+                dur = action.get('duration')
+                if dur is not None and abs(dur - 0.1) > 1e-9:
+                    # Non-default hold time - the 'key' shorthand can't carry it
+                    json_cmd['actions'] = [{"type": "PressKey",
+                                            "keys": [action['key'].lower()],
+                                            "duration": dur}]
+                else:
+                    # Single key press - use simplified format
+                    json_cmd['key'] = action['key'].lower()
             elif action['type'] == 'mouse':
                 # Single mouse action - use simplified format
                 json_cmd['mouse'] = action['generator_name']
@@ -510,10 +555,14 @@ def to_json(profile: dict) -> str:
             json_actions = []
             for action in actions:
                 if action['type'] == 'keypress':
-                    json_actions.append({
+                    ja = {
                         "type": "PressKey",
                         "keys": [action['key'].lower()]
-                    })
+                    }
+                    dur = action.get('duration')
+                    if dur is not None and abs(dur - 0.1) > 1e-9:
+                        ja["duration"] = dur
+                    json_actions.append(ja)
                 elif action['type'] == 'mouse':
                     mouse_action = {
                         "type": "MouseAction",
