@@ -162,8 +162,7 @@ serialization. **Conditions are not a separate action type; they are fields on e
 action:** `Ordinal`, `IndentLevel`, `ConditionMet`, `ConditionPairing`, `ConditionGroup`,
 `ConditionStartOperator`, `ConditionStartValue`, `ConditionStartValueType` — alongside
 `ActionType`, `Duration`, `Delay`, `KeyCodes`, `Context`, `X`, `Y`, `InputMode`,
-`IsSuffixAction`. `IndentLevel` is what nests actions inside a condition block. (Edvard's
-`commands.xml` is an Elite Dangerous keybinds file, not a VA profile — ignore it.)
+`IsSuffixAction`. `IndentLevel` is what nests actions inside a condition block.
 
 **The binary stores integer codes, not names.**  [SOLID] corinthian contains zero
 occurrences of `PressKey`/`Say`/`BeginCondition`/etc. as strings; `ActionType` and the
