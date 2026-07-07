@@ -84,8 +84,7 @@ Verified across the zoom branches and all seven numkeys commands:
   key-hold Duration: **1.5** for both zoom keys, **0.5** for every numkeys key.
 - `VK` is a uint16 at marker+8. F = 0x46, R = 0x52.
 
-This duration doubles as a validity check: a real keypress has a small positive double in
-that slot; padding/marker false-hits do not (see next section).
+This duration doubles as a validity check: a real keypress has a sane double in that slot (0.03–1.5 observed across zoom / numkeys / corinthian); false-hits do not — but corinthian phantom slots hold positive **denormals** (~1e-304), so the test needs a floor (e.g. `0.001 <= d <= 60`), not just `d > 0` (floor added on review 2026-07-07; see next section).
 
 ## Two decoding traps that mislead the current decoder  [SOLID]
 
@@ -186,7 +185,7 @@ fields:
   **contains = 1**. Cross-checks: for a *fixed* operand type (`{TXT:…}`) B is not constant
   (1×82, 2×8, 3×1, 5×1), so it cannot be the value *type* — it tracks the comparison. And
   `{BOOL:…}` shows exactly two values, **B = 2 (7×) / 3 (5×)** — the two boolean operators
-  (is-true / is-false), not noise.
+  (is-true / is-false), not noise. (Review 2026-07-07, CSV cross-check: {BOOL:} conditions serialize as Equals 'True' / Equals 'False' / Does Not Equal 'True'; the ten distinct combos split ~5 semantically-true / ~5 semantically-false — consistent with is-true/is-false for 2/3, inconsistent with an Equals/Does-Not-Equal split, which would be ~9/1.)
   - Named so far: **contains = 1**; boolean operators = **2 / 3** (which is which still
     needs the pair). `equals`, `greater-than`, etc. remain unnamed.
 - **A (before B) = condition subtype (Begin / Else-If / …).**  Ground truth: branch 1 is
@@ -240,3 +239,23 @@ matched pair is what a generic decoder *implementation* would require.
 | Terminator false-hit (VK 0xFFFF) | 2367 |
 | Category `camera` | 2482 |
 | Version `2.1.8` | 2802 |
+
+---
+
+## Session update — corinthian CSV matched pair (2026-07-07)
+
+Ground truth this round: `reference profiles/corinthian-4-Profile.{vap,csv}` (both gitignored, local). The CSV lists every command's category + full English action sequence, including **882 compare-conditions across the 479 rows** (111 across the 193 unique action sequences; compound `Begin Condition : (…)` blocks not counted). An earlier draft said "258 conditions" — not reproducible under any counting rule tried on review (2026-07-07); superseded by the figures above. Operator vocabulary observed, by compare type: **Text** — Contains, Equals, Starts With, Does Not Equal; **Boolean (local vars)** — Equals True only (the operator "Equals False" never occurs); **{BOOL:} tokens** — serialized as compares against quoted literals: Equals 'True', Equals 'False', Does Not Equal 'True'; **Integer** — Has Not Been Set, Is Greater Than, Is Less Than, Equals, Does Not Equal.
+
+### Confirmed
+- **Contains = ConditionStartOperator code 1** — from the **zoom** ground truth only. The corinthian `{LASTSPOKENCMD}`→i4=1 correlation is **confounded** (that token is ~97% Contains, so "1 precedes it" may track the token, not the operator). Do not cite the correlation as proof.
+- **The token-adjacency model is dead.** The operator/subtype are NOT at fixed offsets before the operand string. Proof: across corinthian conditions the byte at `token−8` (the zoom "subtype" slot) takes values 2,3,4,5,6,9,15,21 — no Begin=2/ElseIf=4 pattern. Operator/subtype are object members at member-table offsets, not adjacent fields.
+- **Near-twin diff works; structure is byte-stable relative to `phrase_end` within a command family.** Diffing `throttle 25/50/75/100` (identical except key + literal) pinpoints, relative to `phrase_end`:
+  - **+184 = keypress VK code** — `[112,115,113,114]` = F1,F4,F2,F3 (matches 25/100/50/75).
+  - **+580 = ConditionStartValue** (integer literal) — `[1,4,2,3]` = "Does Not Equal 1/4/2/3".
+  Everything else identical → the operator ("Does Not Equal", constant across the four) lives in the non-differing bytes.
+- **Two operand-storage mechanisms.** Global tokens (`{LASTSPOKENCMD}`, `{TXT:}`, `{BOOL:}`, `{INT:}`) are stored inline in the condition. Local condition vars (`[throt]`, `[i]`, `[count]`, `[System_visits]`) live in a variable **declaration pool** and are referenced; the var-ref wrapper is `[01 00 00 00][len][name][01 00 00 00]`. The pool record and the condition record share this wrapper, so a global name-search lands on the pool, not the compare — a trap (mistook the pool's `01`/`fc ff ff ff` for the compare value).
+
+### Still open (needs the action-graph walk — a research investment)
+- Operator codes beyond Contains=1 (Equals, Starts With, Does Not Equal, Is Greater/Less Than, Has Not Been Set, Equals True/False). The cross-operator contrast is ambiguous because the compare value can only be reached reliably by walking the action objects (the var-name anchor hits the pool). 
+- ConditionStartValueType, ConditionPairing/Group, IndentLevel, Begin/ElseIf/Else/End subtype codes.
+- **The unlock:** dereference the shared command-member offsets (`[32,140,156,160]` constant across zoom `[347,…]` and throttle `[331,…]`) to walk actions in order, read each ActionType, match a known sequence (throttle = PressKey, BeginIntegerCompare, SetSmallInt, EndCondition, SetInteger) to fix the BeginCompare ActionType code, then read operator/type/subtype at consistent object-relative member offsets. This finds ALL conditions (inline and by-ref) across every command. Not attempted this round (higher-cost, previously ambiguous) — fund explicitly.
