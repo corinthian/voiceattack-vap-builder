@@ -15,9 +15,11 @@ VoiceAttack cannot export XML, but its **CSV export** lists every command's cate
 
 The CSV expands VoiceAttack's dynamic-phrase syntax (`[select;target] wing target`, `inch forward [1..4;]`) into one row per spoken permutation, so 200 raw decoder commands ↔ 479 CSV rows. A phrase-expander reproduces the expansion and matches **443/479 rows, 0 ambiguous**.
 
-## Decoder accuracy — 4 bugs found, all PARKED (documented, unfixed)
+## Decoder accuracy — 4 bugs found, all FIXED (2026-07-07)
 
-Full writeup: `skills/voiceattack-decoder/docs/Decoder_Accuracy_Findings_corinthian_CSV.md`. No decoder code has been touched — fixes await explicit authorization. Reviewed against the binaries 2026-07-07: all four bugs confirmed exactly, but the drafted fix directions for #1 (categories) and #2 (phantom keys) were flawed and are corrected in the findings doc, which also gains Finding 6 (numkeys VK-aliased fallback categories — the category fallback fails even with no slash involved).
+Full writeup: `skills/voiceattack-decoder/docs/Decoder_Accuracy_Findings_corinthian_CSV.md`. Reviewed against the binaries 2026-07-07: all four bugs confirmed exactly, but the drafted fix directions for #1 (categories) and #2 (phantom keys) were flawed and are corrected in the findings doc, which also gains Finding 6 (numkeys VK-aliased fallback categories — the category fallback fails even with no slash involved).
+
+All four fixes then implemented in `vap_decoder.py` and verified (scratchpad prototype → all four reference profiles → CSV oracle): **479/479 CSV rows matched** (was 443), category mismatches 37→1 (the zoom-out anomaly, finding 5), phantom keypresses 19→0, 48 hold durations now decoded, the set-fire command recovered (corinthian 200→201 commands = the profile header's own count field). Two extra findings from verification: **KeyDown/KeyUp records ("press down X" / "release X") share the keypress marker with an exactly-0.0 Duration slot** — the phantom filter accepts d==0.0 only with a verified record suffix; and **`find_mouse_actions` iterated a set, making multi-mouse-action order nondeterministic across runs** — fixed by sorting hits by byte position.
 
 1. **Categories wrong for 36/192 (~19%)** — of the 200 decoded commands, 8 are absent from the CSV export (it's a filtered subset), leaving ~192 comparable. `_extract_category` line 351 discards any string containing `/`, so the real category `flight/navigation` is thrown away and the fallback returns action text, a key letter, or a command-GUID. First bulk test of the shipped category-anchor fix; it fails on every slash-category. *(Highest priority; ~one-line fix.)*
 2. **Phantom keypresses in ~19 conditional commands** — `find_key_actions` line 175 matches the `00000000 01000000` prefix and never validates what follows, so condition bytes read as keypresses with mouse-button VKs (1/2/4/256). Real key survives; the phantoms are extra (before or after it). *(Fix corrected on review: NOT the docstring-suffix check — real keys have two suffix shapes and a phantom passes it. Use the Duration-slot check at marker−12 with a floor; see findings doc.)*
@@ -41,18 +43,16 @@ Full writeup: `skills/voiceattack-decoder/docs/VAP_Conditional_Command_Analysis.
 ## Git state
 
 - Branch: `feature/decode-conditional-actions`
-- Commit stack: `4233a0e` (decoder fix + plan) → `01c9bbb` → `ca3a5c9` → `11986c6` → `c60647e` → `8148b07` (all docs)
-- **Uncommitted this session:**
-  - `M  skills/voiceattack-decoder/docs/VAP_Conditional_Command_Analysis.md` (session findings appended)
-  - `?? skills/voiceattack-decoder/docs/Decoder_Accuracy_Findings_corinthian_CSV.md` (new bug report)
-  - `?? Project_Status.md` (this doc, repo root)
+- Commit stack: `4233a0e` (decoder fix + plan) → `01c9bbb` → `ca3a5c9` → `11986c6` → `c60647e` → `8148b07` (all docs) → `383408b` (status + findings + review corrections) → decoder-fix commit (this session; 4 bugs + mouse determinism)
+- Working tree clean after the decoder-fix commit; nothing pushed.
 - Reference profiles + CSV are gitignored (local only), consistent with keeping binaries out of Git.
 
 ## Open decisions
 
 1. **Fund the action-graph walk** (path to the full condition enum) or bank Contains=1 + the diff technique and stop.
-2. **Authorize the 4 decoder fixes** — recommended path is prototype + verify in scratchpad against all reference profiles (recovery AND no new false-positive commands) before editing `vap_decoder.py`. Priority: categories → phantom keys → dropped command → durations.
-3. **Commit** the three uncommitted files on this branch.
+2. ~~Authorize the 4 decoder fixes~~ — DONE 2026-07-07, all four fixed and verified (see Decoder accuracy above).
+3. ~~Commit the uncommitted docs~~ — DONE 2026-07-07 (`383408b` docs, decoder fix commit follows).
+4. **Regression harness** — the verification scripts live in the session scratchpad only. The fix plan's regression bar calls for a checked-in harness, but the reference profiles are gitignored (local-only), so a committed harness can't run elsewhere. Decide: check in the harness with a skip-if-missing guard, or keep verification manual.
 
 ## Key artifacts
 
