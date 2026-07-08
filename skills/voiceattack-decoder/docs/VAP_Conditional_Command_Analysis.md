@@ -267,3 +267,113 @@ Boolean token compares (`{BOOL:…}`) share this enum, comparing against quoted 
 **Noise floor, again.** Equals = 0 aliases zero padding: a token in a non-condition context (Say / Write / Set-text operand) can read token_end = 0 or FF-run. Only nonzero, non-FF token_end values are trustworthy from a flat scan — reading Equals conditions reliably still needs the object walk. Same lesson as the keypress aliasing.
 
 **Still open after this probe:** what token−4 is (1, 1 in zoom; 1..10 in conditionals; mostly 1 in corinthian); the value-type field and codes; Integer / Decimal / Boolean-variable dropdown enums; operator position for pool-referenced local-var conditions; Begin/Else If/Else/End subtype codes and IndentLevel. Probe profile #2 is specified in `Conditionals_Probe_2_Spec.md`.
+
+---
+
+## Session update — object-tree walk: member layout + base found (2026-07-07)
+
+Ground truth this round: an object-tree walk over profiles already in hand — `zoom-if-else.vap`, `numkeys-Profile.vap`, conditionals-1 (`conditionals-Profile.vap`), and `corinthian-4-Profile.vap` (all four already used above). Pre-vap analysis on existing data, no new export needed — this is the "action-graph walk" the corinthian session update flagged above as a research investment.
+
+**[SOLID] Object-envelope base found — this answers the doc's long-open "what base is 331 measured from."** Every serialized CommandAction is `[u32 head][u32 member[0]]...[u32 member[N-1]]` — an offset array, ascending after head — followed by a member-data heap, and every member offset is relative to the array's own start address: the position of `head` itself. `head` is not a member offset — it is the object's total byte length, which doubles as a pointer to the next sibling object (347 for zoom's Begin, 331 for every keypress object). So 331 was never measured from an external landmark; it is the keypress action object's own byte length, and it recurs because every keypress object is the same size. Walking `start -> start+head -> ...` chains the action objects in order, and chain length = action count: zoom (count=5) and numkeys (count=1 each) both check out, and on corinthian `((EDDI jumped))` (count=15, including two nested compares) and `Climb` (count=17, if/elseif/else + a nested Integer block + Loop While) both chain to their full counts.
+
+**[SOLID] Fixed 34-member CommandAction layout, identical across zoom and numkeys.** `nmembers=34` holds for every action in both profiles, confirmed by data_start arithmetic (zoom: 928 = 788 + 4 + 34×4) rather than by rediscovering the count per object — rediscovery is unsafe, since a shared/interned heap slot can emit a backward offset, truncate the array early, and silently shift every downstream index.
+
+Member index table (only the slots resolved this round; enum tables follow separately):
+
+| idx | field | confidence |
+|-----|-------|------------|
+| m[17] | ConditionPairing — index of the next branch-point-or-End | [SOLID], validated with real nesting + a loop on corinthian |
+| m[18] | counter, reads 1..10 across conditionals-1's ten blocks, 1 in zoom, 1 for Climb's Loop While | [OPEN] — not a simple global block counter, not nesting depth; candidate ConditionGroup/Ordinal |
+| m[19] | left operand — inline token OR pool-local variable NAME (`System_visits`, `ads`, `count`, `c`), same slot both ways | [SOLID] |
+| m[20] | ConditionStartOperator — read as the full Text 0–9 enum, correctly, on conditionals-1's ten self-labeling blocks (table already in this doc, above) | [SOLID] on Text; [PARTIAL, sample-backed] on Integer, see below |
+| m[24] | ConditionStartValueType — Text=1, Bool=2, Int=3 | [SOLID] on Text/Int; single-sample on Bool |
+
+**[SOLID] ConditionPairing (m[17]) confirmed with real nesting and a loop — this settles the branch-vs-End ambiguity probe-2 command 3 was designed to test.** A Begin/Else-If points to the next branch-point-or-End, not straight through to the block's final End: on corinthian's `jumped`, O9 (outer) → 14 and O10 (inner) → 13, and both closing actions point back (14→9, 13→10); on `Climb`, O1 → 3 (ElseIf), O3 → 8 (Else), O11 (LoopWhile) → 16 (End Loop).
+
+**[SOLID] Pool-referenced left operand and operator confirmed on corinthian — this was the walk's own open extrapolation, and it is now closed.** m[19] reads the pool var name directly (`System_visits`, `ads`, `count`) with no inline token present at all; m[20] reads the operator by member index regardless of whether the left operand is inline or pool-referenced. Gotcha, carried over: m[20] is a shared slot — on Set-integer actions it holds the set-op code (4=converted, 1=minus), not a comparison operator, so any condition read must gate on m[24] ∈ {1,2,3}.
+
+**[SOLID] ConditionStartValueType (m[24]) cracked — probe-2 command 2's target.** Text=1, Bool=2, Int=3, read directly off the object: conditionals-1's ten Text blocks all read m[24]=1, constant — which is exactly what separates m[24] from m[18] (see reconciliation below). An inline non-Text token carries its declared type rather than collapsing to Text: corinthian's `((EDDI entered signal source))` inline `{INT:...}` compare reads m[24]=3, not 1. [PARTIAL, sample-backed] Bool=2 rests on a single sample (`[ads]`) — thinner than Text or Int. Decimal and Small-Int codes are still unknown; no sample yet.
+
+**[PARTIAL, sample-backed] Integer operator enum, incomplete:**
+
+| code | operator | evidence |
+|------|----------|----------|
+| 0 | Equals | corinthian, `[c] Equals 0` |
+| 1 | Does Not Equal | corinthian, `[throt] Does Not Equal -1` |
+| 2 | Is Less Than | corinthian, CSV-matched |
+| 4 | Is Greater Than | corinthian, CSV-matched |
+| 7 | Has Not Been Set | corinthian, CSV-matched |
+
+Corinthian is now exhausted — it contains only these five Integer operators (codes 0, 1, 2, 4, 7); codes 3, 5, 6 and Has Been Set / ≤ / ≥ never occur in it. Still missing therefore: Has Been Set, Is Less Than or Equal To, Is Greater Than or Equal To. [INFERRED] the observed spacing (Is Less Than=2, Is Greater Than=4) fits VoiceAttack's Integer dropdown order and predicts 3 = Is Less Than or Equal To, 5 = Is Greater Than or Equal To, 6 = Has Been Set — but only the probe-2 command-1 sweep + dropdown screenshot confirms the gaps. Confirmed NOT the same enum as Text above: Has Not Been Set is code 7 for Integer vs code 9 for Text.
+
+**[OPEN] m[18] — the real "token−4" counter, not resolved this round.** Reads 1..10 across conditionals-1's ten self-labeling blocks, 1 in both of zoom's branches, and 1 for Climb's Loop While rather than a fresh number — so it tracks neither a simple global block count nor nesting depth. Candidate ConditionGroup or Ordinal; unresolved.
+
+**Reconciliation with the flat-scan model above.** The flat rules already recorded in this doc — operator at `token_end`, `ConditionPairing` at `token−8` — remain correct for inline-token conditions; the object walk does not contradict them, it explains them: `token_end` is member m[20], `token−8` is member m[17], and the token itself sits at member m[19] (`token_end` falls right after m[19]'s data). The object walk supersedes the flat scan by giving fixed member indices that ALSO resolve pool-referenced conditions — no inline token, so no `token` anchor to count offsets from — which the flat scan cannot reach at all. Correction to this doc's own open item: the flat "token−4 counter" is member m[18], and `ConditionStartValueType` is the separate member m[24]. Conditionals-1 settled this: m[24] reads 1, constant, for all ten Text blocks, while m[18] reads 1..10 across those same ten blocks.
+
+**What this closes, pre-vap, against `Conditionals_Probe_2_Spec.md`'s targets:**
+- Command 1's local-var operator-position target — closed: m[19]/m[20] read pool-referenced operands and operators by member index, confirmed on corinthian.
+- Command 1's Integer enum target — not closed: 5 codes now known (0, 1, 2, 4, 7) and corinthian exhausted; still needs Has Been Set, ≤, ≥ (the 3/5/6 gaps, predicted but unconfirmed).
+- Command 2's value-type-field target — closed for Text/Bool/Int; Decimal and Small-Int codes still unknown.
+- Command 3's ConditionPairing (branch-vs-End) target — closed: the "next branch-point-or-End" model is confirmed against the rival "always points to the block's final End" model, using real nesting (`jumped`) and a loop (`Climb`).
+- Command 3's IndentLevel and Begin/ElseIf/Else/End subtype targets — not closed: no candidate member identified this round (m[2], per the walk's own working notes, remains an unresolved pointer/length-shaped read, not yet a clean subtype code).
+
+Net effect for probe 2: command-2's value-type target and command-3's pairing question are largely answered pre-vap; command-1 reduces to completing the Integer operator enum plus the Decimal/Boolean/Small-Int value-type codes — more samples are still needed for those, but not a VoiceAttack export/XML matched pair, since the object walk already reaches them on data in hand.
+
+---
+
+## Session update — Integer operator enum confirmed (2026-07-07)
+
+**[SOLID] The full 8-operator Integer enum is confirmed — closing the [INFERRED] gaps (3/5/6) left open in the object-walk update above.** Ground truth: an `integer compare` command authored into `conditionals-Profile.vap` this round (alongside the existing text sweep), sweeping all eight Integer-compare operators in dropdown order against `[i]` (a pool-referenced local var), read via the object walk (operator = member m[20]). All eight blocks read m[24]=3 (Int) and m[19]=`[i]`; m[20] returns the 0-indexed dropdown position exactly:
+
+| code | operator |
+|------|----------|
+| 0 | Equals |
+| 1 | Does Not Equal |
+| 2 | Is Less Than |
+| 3 | Is Less Than Or Equals |
+| 4 | Is Greater Than |
+| 5 | Is Greater Than Or Equals |
+| 6 | Has Been Set |
+| 7 | Has Not Been Set |
+
+This matches the prior update's [INFERRED] predictions exactly (3 = Is Less Than Or Equals, 5 = Is Greater Than Or Equals, 6 = Has Been Set), and is a third independent object-walk confirmation (after zoom/numkeys and corinthian) — on a freshly authored profile, with the pool-referenced operand/operator read holding again. Same coding scheme as Text (0-indexed dropdown position); the enum itself differs (Has Not Been Set is 7 for Integer vs 9 for Text).
+
+**Probe-2 status:** command-1's Integer operator enum is now fully closed pre-`conditionals2`. Still open for probe 2: the Decimal / Boolean / Small-Int value-type codes (m[24]) and their operator enums; IndentLevel; and the Begin/Else If/Else/End subtype (m[2]).
+
+---
+
+## Session update — value-type enum complete + Boolean/Decimal/Small-Int operators (2026-07-08)
+
+Ground truth: three more sweeps authored into `conditionals-Profile.vap` — `boolean` ([boo] vs False), `nested + decimal` ([pie] vs 5.43, with two nested blocks), `small int` ([smal] vs 0) — each sweeping one compare type's dropdown in order, read via the object walk (value-type m[24], operator m[20]).
+
+**[SOLID] ConditionStartValueType (m[24]) — complete, all five types. This fully closes probe-2 command 2's target.** A cross-type member dump (one compare per type) confirms m[24] is the only member that separates all five:
+
+| code | value-type |
+|------|-----------|
+| 0 | Small Integer |
+| 1 | Text |
+| 2 | Boolean |
+| 3 | Integer |
+| 4 | Decimal |
+
+Caveat: Small Integer reads 0, the same value non-condition actions carry (Set/Press/Pause), so 0-as-Small-Int and 0-as-unset are indistinguishable by this field alone — identify a Small-Int compare structurally (Begin marker m[2]=19 + operand m[19] + operator m[20]), never by m[24].
+
+**[SOLID] Operator enum (m[20]) = 0-indexed position in that type's own dropdown.** The generative point: Has [Not] Been Set lands at a different code per type purely because the dropdowns differ in length.
+
+| value-type | operators (code = order) |
+|-----------|--------------------------|
+| Boolean (4) | 0 Equals · 1 Does Not Equal · 2 Has Been Set · 3 Has Not Been Set |
+| Integer / Decimal / Small Integer (8) | 0 Equals · 1 Does Not Equal · 2 Is Less Than · 3 Is Less Than Or Equals · 4 Is Greater Than · 5 Is Greater Than Or Equals · 6 Has Been Set · 7 Has Not Been Set |
+| Text (10) | as in this doc's existing table (0–9) |
+
+So Has Not Been Set = 3 (Bool) / 7 (Int, Decimal, Small Int) / 9 (Text) — all the same field, just the positional index. Decimal and Small Integer share Integer's exact 8-operator order.
+
+**[INFERRED] m[18] is a 1-based block-open ordinal — a candidate for ConditionGroup, but NOT confirmed as such.** It increments once per Begin-Condition in serialized order (Else If inherits its Begin's number; nested Begins take the next number): decimal reads 1,2,3,3,4,5,6,7,8; conditionals-1 1..10; zoom 1,1; boolean 1,1,1,1. That behavior is fully explained as an ordinal — no ConditionGroup (AND/OR grouping) semantics have actually been observed. This supersedes the earlier update's tentative reading of m[18] and does NOT rename the doc's open "token−4"/counter item to ConditionGroup yet; the distinguishing test is a compound condition (below).
+
+**[SOLID observation] Compound conditions expose a walker gap — and locate where the extra sub-compares live.** `(return to main screen)`'s opening `Begin Condition : [gui focus] Equals 'none' OR [gui focus] Equals 'station services'` is a single action object, inflated (head=579 vs ~340 for a simple compare). The flat 34-member read surfaces only the FIRST sub-compare; the second literal ('station services') sits inside the object at member m[31]'s data region (m[31] spans object-offsets 343→571, scalar reads 2 — a candidate sub-condition count). So additional AND/OR sub-compares are packed into a member the current single-compare reader does not descend into: the walk undercounts sub-conditions on compound blocks, and settling the ConditionGroup question requires decoding that nested region.
+
+**[SOLID] IndentLevel is not present in the 34-slot member table.** In the nested decimal command (depths 0/1/2), no member reads the 0/1/2 depth pattern — a depth-0 Begin and a depth-1 Begin differ only in GUID / pairing / m[18] / operator, and the depth-2 keypress has no member reading 2. Nesting is reconstructable from ConditionPairing (m[17]) plus the m[18] ordinal, so an IndentLevel value can be derived even if it is not stored here; whether VA stores it elsewhere or recomputes it at load is not shown by the bytes.
+
+**[SOLID] m[2] = ActionType (resolved same day).** m[2] is a per-action-type integer, consistent across jumped / climb / boolean: 0 PressKey · 2 Pause · 16 Execute Command · 17 Kill Command · 19 Begin Condition · 20 End Condition · 23 Write/Say · 29 Else · 30 Begin Loop While · 31 End Loop · 36 Set Boolean · 37 Set Integer · 63 Else If. Codes 19/63/30 carry a compare; no non-compare action reads any of them, so m[2] is the reliable condition detector (m[24] is NOT — it reads 0 for both Small-Integer compares and every non-condition action, filtering nothing). This corrects the earlier reading of "`01 00 00 00` = ActionType 1 = PressKey" above: that `01` is the m[5] keypress marker, and PressKey's ActionType is 0. Enum not exhaustive (Launch/Mouse/SetText etc. unsampled).
+
+**Probe-2 status after this round:** command 2 (value-type field + all five codes) is closed pre-`conditionals2`; command 3's ConditionPairing branch-vs-End model is closed, its IndentLevel is reframed (not a stored member; derivable from pairing + ordinal), and its subtype (m[2]) stays open. Remaining genuinely-open items: whether m[18] is ConditionGroup (needs the compound decode), the subtype code (m[2]), and compound-condition handling in the walker.
