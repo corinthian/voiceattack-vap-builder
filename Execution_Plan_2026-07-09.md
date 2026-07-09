@@ -18,6 +18,16 @@ Close out the current research program, roll every confirmed discovery into a **
 | Tag 1.2.0 retroactively? | **Recommend yes** (cheap, makes release history honest); release itself becomes **2.0.0** |
 | Push decisions | Per standing workflow: nothing is pushed or merged to main without explicit approval at each gate |
 
+## Status — updated 2026-07-09
+
+| Phase | Status |
+|---|---|
+| 0 — Stabilize the repo | **Complete** (2026-07-09). Deviation: GitHub branch protection blocks direct pushes to main, so all main changes route via PR — the 13-commit decoder line landed as PR #15, doc consolidation as PR #16. `Version-1.2.0` tagged on `fa72978` and pushed. 9 branches deleted (the 8 dead + the merged feature branch). Stash dropped after review (superseded content). Truth docs committed on `feature/decoder-v2` (local, unpushed per plan). Backups: git bundle + untracked-docs tarball in `~/Projects`. |
+| 1 — Generator hotfixes | **Complete** (2026-07-09, PR #17). All six fixes in. Lane B (Sonnet) implementation; Lane A review passed (diff read, adversarial cases independently re-run). All three examples byte-identical to pre-fix output modulo random GUIDs. Exit codes now 0 clean / 1 error / 2 warnings. |
+| 2 — Research completion | **Blocked on human gate** — Probe B profile build + export requested from Richard 2026-07-09. |
+| 3 — Spec consolidation | **3.1 in progress** (v0.2 authoring, Lane A, on `feature/decoder-v2`). 3.2 awaits Probe B results; 3.3–3.4 pending. |
+| 4–8 | Pending. |
+
 ## Out of scope — the parked-uncertainty register (Phase 2 formalizes this)
 
 Compound AND/OR condition *encoding* (decode-only stays); header @8 command-list index (discovery remains walk/scan-based); the ~24 unmapped member slots; anything Probe B cannot close with one profile-export round. These go into a committed `VAP_Parked_Uncertainties.md` with enough context that a future session can resume any of them cold.
@@ -34,7 +44,7 @@ Three lanes. Every delegated task names its lane; anything produced in Lane C or
 
 ---
 
-## Phase 0 — Stabilize the repo (Lane C, review Lane B) — ~half day
+## Phase 0 — Stabilize the repo (Lane C, review Lane B) — ✅ COMPLETE 2026-07-09
 
 Prereq: none. The fetch/prune already ran during the final review; state below assumes it.
 
@@ -48,7 +58,7 @@ Prereq: none. The fetch/prune already ran during the final review; state below a
 
 Exit criteria: main == origin/main, one working branch (`feature/decoder-v2` created from main), zero stale branches, zero stashes, review docs deduplicated to one canonical + one archived.
 
-## Phase 1 — Generator hotfixes (Lane B, review Lane A) — ~half day, parallel with Phase 0
+## Phase 1 — Generator hotfixes (Lane B, review Lane A) — ✅ COMPLETE 2026-07-09 (PR #17)
 
 The generator ships today and is NOT replaced by V2, so it gets fixed now. Decoder V1 defects are deliberately **not** hotfixed — every one of them is cured structurally by V2 (Phase 5 acceptance criteria); patching the flat-scan twice is waste.
 
