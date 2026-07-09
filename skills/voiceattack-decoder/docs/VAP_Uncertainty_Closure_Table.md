@@ -1,5 +1,7 @@
 # VAP Uncertainty Research — Phase 0–2 Closure Table (2026-07-08)
 
+> **HISTORICAL (2026-07-09).** All closures and the ActionType table are folded into `VAP_Format_Specification.md` v0.2, which alone is authoritative. This file is retained as the evidence trail; Probe B targets and parked items are tracked in spec §12.
+
 Session run of `VAP_Uncertainty_Research_Plan.md`, Phases 0→2, stopped at the closure
 gate per user direction. Analysis-only; scripts in scratchpad; no project docs edited.
 Verdict rule (user ruling): "holds-where-it-appears = CLOSED" (a feature consistent in

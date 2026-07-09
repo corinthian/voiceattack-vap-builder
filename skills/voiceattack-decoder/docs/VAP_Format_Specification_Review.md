@@ -1,5 +1,7 @@
 # VAP Format Specification v0.1 — Verification Review
 
+> **HISTORICAL (2026-07-09).** All corrections and findings in this review are folded into `VAP_Format_Specification.md` v0.2, which alone is authoritative. This file is retained as the evidence trail for the v0.1→v0.2 corrections.
+
 Response paper to `VAP_Format_Specification.md` (draft 0.1, 2026-07-08). Every byte-testable claim was re-executed against the five reference binaries and the CSV oracles by an independent harness (scratchpad `spec_verify1–6.py`), not by re-reading the prior docs. Walk coverage: 1,601 action objects across all commands of all five profiles (zoom 5, numkeys 16, conditionals 111, corinthian 1,166, base profile 303) — every object chained cleanly, every one read m[1]=140, none had a backward member offset.
 
 **Overall verdict: the core of the spec is correct and strongly confirmed.** The object model (§6) — fixed 34-member offset array, array-start base, head-as-length chaining, actionCount as chain length — survives every test, including the two hardest cases (set-fire's 37-action chain, the compound-condition object). The operator enums, value-type codes, pairing semantics, and block ordinal all reproduce exactly. But the review found one refuted claim, one materially incomplete section, a broken reference algorithm, and several imprecise [SOLID] tags. Fix §8.3 and §13 before anyone implements against this document.
