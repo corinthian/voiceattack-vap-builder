@@ -9,6 +9,7 @@ Usage: python3 vap_generator.py <input.json> [output.vap]
 """
 
 import json
+import os
 import sys
 import uuid
 from xml.sax.saxutils import escape
@@ -224,8 +225,29 @@ def new_guid():
     return str(uuid.uuid4())
 
 
+def format_duration(value):
+    """Validate a duration and format it as a plain decimal string (never
+    scientific notation). Invalid (non-numeric, zero, or negative) values
+    fall back to 0.1 with a warning."""
+    try:
+        d = float(value)
+    except (TypeError, ValueError):
+        warn(f"Invalid duration {value} - using default 0.1")
+        return "0.1"
+    if d <= 0:
+        warn(f"Invalid duration {value} - using default 0.1")
+        return "0.1"
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    s = repr(d)
+    if "e" in s or "E" in s:
+        s = f"{d:.10f}".rstrip("0").rstrip(".")
+    return s
+
+
 def action_xml(action, ordinal=0):
-    """Generate XML for a single action."""
+    """Generate XML for a single action. Returns None if the action should
+    be skipped entirely (unknown action type or unknown mouse action)."""
     action_type = action.get("type", "PressKey")
 
     # Common fields
@@ -236,6 +258,7 @@ def action_xml(action, ordinal=0):
     x, y, z = 0, 0, 0
     scroll_clicks = 0
     key_codes_xml = "<KeyCodes/>"
+    skip_duration_validation = False
 
     if action_type in ("PressKey", "KeyDown", "KeyUp", "KeyToggle"):
         keys = action.get("keys", [])
@@ -243,6 +266,10 @@ def action_xml(action, ordinal=0):
             keys = [keys]
         codes = []
         for k in keys:
+            if isinstance(k, int) and not isinstance(k, bool):
+                # Raw VK code given as a JSON number - accept as-is
+                codes.append(k)
+                continue
             k_lower = k.lower()
             if k_lower in KEY_CODES:
                 codes.append(KEY_CODES[k_lower])
@@ -262,16 +289,20 @@ def action_xml(action, ordinal=0):
     elif action_type == "MouseAction":
         mouse_action = action.get("action", "left_click").lower()
         if mouse_action not in MOUSE_CODES:
-            warn(f"Unknown mouse action '{mouse_action}' - defaulting to left_click")
-        context = MOUSE_CODES.get(mouse_action, "LC")
-        # scroll_clicks for scroll actions - try Duration field (appears before Context)
-        scroll_clicks = action.get("scroll_clicks", 1 if context in ("SF", "SB", "SL", "SR") else 0)
+            warn(f"Unknown mouse action '{mouse_action}' - skipped")
+            return None
+        context = MOUSE_CODES[mouse_action]
         if context in ("SF", "SB", "SL", "SR"):
+            # scroll_clicks for scroll actions - try Duration field (appears before Context)
+            scroll_clicks = action.get("scroll_clicks", 1)
             duration = scroll_clicks  # Try Duration for scroll clicks
-        x = scroll_clicks  # Also set X
-        # Duration for click actions (click duration in seconds)
-        if "duration" in action and context not in ("SF", "SB", "SL", "SR"):
-            duration = action["duration"]
+            x = scroll_clicks  # Also set X
+            skip_duration_validation = True
+        else:
+            # Duration for click actions (click duration in seconds).
+            # scroll_clicks must never leak into non-scroll actions.
+            if "duration" in action:
+                duration = action["duration"]
 
     elif action_type == "Pause":
         duration = action.get("duration", 0.5)
@@ -280,6 +311,16 @@ def action_xml(action, ordinal=0):
         context = escape(action.get("text", ""))
         x = action.get("volume", 100)
         y = action.get("rate", 0)
+
+    else:
+        warn(f"Unknown action type '{action_type}' - skipped")
+        return None
+
+    # A duration of 0 that was never supplied by the user is an inapplicable
+    # placeholder (e.g. KeyDown/KeyUp/plain mouse clicks) - not an error.
+    if not skip_duration_validation and duration == 0 and "duration" not in action:
+        skip_duration_validation = True
+    duration_str = str(duration) if skip_duration_validation else format_duration(duration)
 
     return f"""        <CommandAction>
           <PairingSet>false</PairingSet>
@@ -292,7 +333,7 @@ def action_xml(action, ordinal=0):
           <DecimalTransient1>0</DecimalTransient1>
           <Id>{action_id}</Id>
           <ActionType>{action_type}</ActionType>
-          <Duration>{duration}</Duration>
+          <Duration>{duration_str}</Duration>
           <Delay>{delay}</Delay>
           {key_codes_xml}
           <Context>{context}</Context>
@@ -329,7 +370,11 @@ def command_xml(cmd):
         # Default: single key press if 'key' specified
         if "key" in cmd:
             key = cmd["key"]
-            if key.lower() not in KEY_CODES and not key.isdigit():
+            if isinstance(key, int) and not isinstance(key, bool):
+                pass  # raw VK code given as a JSON number - always valid
+            elif not isinstance(key, str) or (
+                key.lower() not in KEY_CODES and not key.isdigit()
+            ):
                 warn(
                     f"Command '{trigger_raw}': unknown key '{key}' - command will have no action"
                 )
@@ -345,7 +390,12 @@ def command_xml(cmd):
         else:
             warn(f"Command '{trigger_raw}': no key, mouse, or actions defined")
 
-    actions_xml = "\n".join(action_xml(a, i) for i, a in enumerate(actions))
+    action_chunks = []
+    for a in actions:
+        chunk = action_xml(a, len(action_chunks))
+        if chunk is not None:
+            action_chunks.append(chunk)
+    actions_xml = "\n".join(action_chunks)
 
     return f"""    <Command>
       <Referrer xsi:nil="true"/>
@@ -538,12 +588,28 @@ def main():
         sys.exit(0 if sys.argv[1:] else 1)
 
     input_file = sys.argv[1]
-    output_file = (
-        sys.argv[2] if len(sys.argv) > 2 else input_file.replace(".json", ".vap")
-    )
+    if len(sys.argv) > 2:
+        output_file = sys.argv[2]
+    else:
+        base, ext = os.path.splitext(input_file)
+        output_file = (base if ext.lower() == ".json" else input_file) + ".vap"
 
-    with open(input_file, "r") as f:
-        profile_data = json.load(f)
+    if os.path.abspath(output_file) == os.path.abspath(input_file):
+        print(
+            f"ERROR: Output file would overwrite input file: {output_file}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    try:
+        with open(input_file, "r") as f:
+            profile_data = json.load(f)
+    except FileNotFoundError:
+        print(f"ERROR: File not found: {input_file}", file=sys.stderr)
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        print(f"ERROR: Invalid JSON in {input_file}: {e}", file=sys.stderr)
+        sys.exit(1)
 
     xml = generate_profile(profile_data)
 
@@ -559,6 +625,7 @@ def main():
     print(f"Commands: {cmd_count}")
     if _warnings:
         print(f"Warnings: {len(_warnings)}")
+        sys.exit(2)
 
 
 if __name__ == "__main__":
