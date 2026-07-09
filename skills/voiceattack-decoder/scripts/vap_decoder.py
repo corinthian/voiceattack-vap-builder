@@ -16,6 +16,7 @@ Output:
 """
 
 import json
+import re
 import struct
 import sys
 import zlib
@@ -154,49 +155,53 @@ def read_string(data: bytes, pos: int) -> tuple[Optional[str], int]:
         return None, pos + length
 
 
-def find_all_strings(data: bytes, min_length: int = 4) -> list[tuple[int, str]]:
-    """Find all readable strings in binary data."""
-    strings = []
-    i = 0
-    while i < len(data) - 4:
-        length, _ = read_uint32(data, i)
-        if min_length <= length <= 500:
-            try:
-                s = data[i+4:i+4+length].decode('utf-8')
-                if s.isprintable() and len(s) >= min_length:
-                    strings.append((i, s))
-            except (UnicodeDecodeError, IndexError):
-                pass
-        i += 1
-    return strings
-
-
 def find_key_actions(data: bytes, start: int, end: int) -> list[dict]:
     """
     Find all key actions in a data range by pattern matching.
 
-    Key action pattern:
-    - 4 bytes: 00 00 00 00 (zeros)
-    - 4 bytes: 01 00 00 00 (action type = 1)
-    - 4 bytes: VK code (little-endian)
-    - 2 bytes: 00 00
-    - 6 bytes: FF FF FF FF FF FF (padding)
+    Key action record:
+    - 8 bytes at marker-12: IEEE-754 double key-hold Duration
+    - marker: 00 00 00 00 (zeros) + 01 00 00 00 (action type 1 = PressKey)
+    - 2 bytes at marker+8: VK code (little-endian uint16)
+    - suffix varies by profile (zero padding and/or FF run) and is NOT validated;
+      the Duration sanity check is the phantom filter instead. Condition objects
+      alias the 01 00 00 00 marker with garbage in the Duration slot (FF-runs,
+      denormals ~1e-304), while real records hold either a sane press time
+      (0.001-60s; observed 0.03-1.5) or exactly 0.0 (KeyDown/KeyUp-style
+      "press down X" / "release X" records - all-zero slot, no hold time).
+      See Decoder_Accuracy_Findings_corinthian_CSV.md Findings 3 and 4.
     """
     actions = []
-    # Pattern: 00 00 00 00 01 00 00 00 XX 00 00 00 00 00 FF FF
     pattern_prefix = b'\x00\x00\x00\x00\x01\x00\x00\x00'
 
     i = start
     while i < end - 16:
         if data[i:i+8] == pattern_prefix:
             vk_code = struct.unpack('<H', data[i+8:i+10])[0]
-            if 0 < vk_code < 0x200:  # Valid VK code range
+            dur_ok = False
+            duration = None
+            if i >= 12:
+                d = struct.unpack('<d', data[i-12:i-4])[0]
+                if d == 0.0:
+                    # KeyDown/KeyUp-style record: no hold time. Condition operands
+                    # can also alias an all-zero slot, so additionally require the
+                    # record suffix: VK zero-padded then FF-terminated within 6 bytes
+                    # (both observed real shapes; operand strings fail this).
+                    tail = data[i+10:i+16]
+                    dur_ok = tail[:2] == b'\xff\xff' or tail == b'\x00\x00\x00\x00\xff\xff'
+                elif 0.001 <= d <= 60:  # NaN/denormal/FF-run garbage all fail
+                    dur_ok = True
+                    duration = round(d, 4)
+            if 0 < vk_code < 0x200 and dur_ok:
                 key_name = VK_CODES.get(vk_code, f"VK_0x{vk_code:02X}")
-                actions.append({
+                action = {
                     'type': 'keypress',
                     'vk_code': vk_code,
                     'key': key_name
-                })
+                }
+                if duration is not None:
+                    action['duration'] = duration
+                actions.append(action)
                 i += 16  # Skip past this action
                 continue
         i += 1
@@ -212,8 +217,12 @@ def find_mouse_actions(data: bytes, start: int, end: int) -> list[dict]:
     - Followed by FF FF FF FF FF FF FF FF... padding
 
     Scroll actions have click count as IEEE 754 double at offset -20 from length prefix.
+
+    Hits are collected per context code, then sorted by byte position: set iteration
+    order is hash-randomized per process, so without the sort the action order of a
+    multi-mouse-action command changes from run to run.
     """
-    actions = []
+    hits = []
 
     # Look for each known context code
     for context_code in MOUSE_CONTEXT_CODES:
@@ -250,134 +259,219 @@ def find_mouse_actions(data: bytes, start: int, end: int) -> list[dict]:
                         except struct.error:
                             pass
 
-                actions.append(action)
+                hits.append((pos, action))
                 i = pos + len(pattern)
             else:
                 i = pos + 1
 
-    return actions
+    return [action for _pos, action in sorted(hits, key=lambda h: h[0])]
 
 
-def find_commands(data: bytes, profile_name: Optional[str] = None) -> list[dict]:
-    """Find and parse all commands in the decompressed data."""
+def _guid_is_valid(guid_bytes: bytes) -> bool:
+    """Distinguish a real (random) command GUID from field padding / leaf values.
+
+    VoiceAttack pads and terminates leaf fields with 0xFFFFFFFF and 0x00000000 runs,
+    so those bytes precede categories, Say text and mouse contexts - never a command.
+    """
+    if len(guid_bytes) < 16:
+        return False
+    words = struct.unpack('<4I', guid_bytes[:16])
+    if words[0] == 0 or words[0] == 0xFFFFFFFF:
+        return False
+    if any(w == 0xFFFFFFFF for w in words):
+        return False
+    if guid_bytes.count(0) >= 8:
+        return False
+    if b'\xff\xff\xff\xff' in guid_bytes:
+        return False
+    return True
+
+
+def _match_command_signature(data: bytes, pos: int) -> Optional[dict]:
+    """Test the per-command signature at pos, the structural anchor for detection:
+
+        [16-byte GUID][uint32 length][UTF-8 phrase][uint32 count][count x uint32 offsets]
+
+    Returns a candidate dict, or None if the signature does not hold. No category or
+    other content is consulted - detection is purely structural.
+    """
+    n = len(data)
+    if pos + 20 > n:
+        return None
+    guid_bytes = data[pos:pos+16]
+    if not _guid_is_valid(guid_bytes):
+        return None
+    length = struct.unpack('<I', data[pos+16:pos+20])[0]
+    if not (1 <= length <= 500):
+        return None
+    phrase_end = pos + 20 + length
+    if phrase_end + 4 > n:
+        return None
+    try:
+        phrase = data[pos+20:phrase_end].decode('utf-8')
+    except UnicodeDecodeError:
+        return None
+    if not phrase.isprintable():
+        return None
+    count = struct.unpack('<I', data[phrase_end:phrase_end+4])[0]
+    if not (1 <= count <= 128):
+        return None
+    table_start = phrase_end + 4
+    table_end = table_start + count * 4
+    if table_end > n:
+        return None
+    offsets = struct.unpack('<%dI' % count, data[table_start:table_end])
+    bad_idx = next((i for i, o in enumerate(offsets) if o >= n), None)
+    if bad_idx == 0:
+        return None
+    if bad_idx is not None:
+        # count can overrun the true table length (corinthian 'set ... fire':
+        # count 37, 35 real entries, then child-GUID bytes read as offsets).
+        # Truncate at the first out-of-range entry and keep the command;
+        # detection does not depend on the table. Finding 1 in
+        # Decoder_Accuracy_Findings_corinthian_CSV.md.
+        offsets = offsets[:bad_idx]
+        count = bad_idx
+        table_end = table_start + count * 4
+    # A run of identical offsets signals garbage; a single offset is legitimate.
+    if count >= 2 and len(set(offsets)) == 1:
+        return None
+    return {
+        'pos': pos,
+        'guid_bytes': guid_bytes,
+        'phrase': phrase,
+        'phrase_end': phrase_end,  # also the count position / start of action data
+        'count': count,
+        'table_end': table_end,
+    }
+
+
+# A version-like string (e.g. "2.1.8") is a profile-level field, never a category.
+_VERSION_RE = re.compile(r'\d+(\.\d+)+$')
+
+
+def _strings_in_range(data: bytes, start: int, end: int,
+                      min_length: int = 1, max_length: int = 500) -> list[tuple[int, str]]:
+    """Return (pos, string) for every length-prefixed printable UTF-8 string in [start, end)."""
+    out = []
+    i = max(0, start)
+    limit = min(end, len(data) - 4)
+    while i < limit:
+        length = struct.unpack('<I', data[i:i+4])[0]
+        if min_length <= length <= max_length and i + 4 + length <= len(data):
+            try:
+                s = data[i+4:i+4+length].decode('utf-8')
+                if s.isprintable():
+                    out.append((i, s))
+            except (UnicodeDecodeError, IndexError):
+                pass
+        i += 1
+    return out
+
+
+def _extract_category(data: bytes, start: int, end: int) -> str:
+    """Read the category as a free-form field within the command bound - no whitelist.
+
+    Heuristic (category extraction only; command detection never depends on this):
+    skip known non-category operands, then prefer the last remaining printable string.
+    See Decoder_Category_Anchor_Fix_Plan.md for why this is the weak link.
+    """
+    candidate = None
+    for _pos, s in _strings_in_range(data, start, end, min_length=1):
+        if s in MOUSE_CONTEXT_CODES:
+            continue
+        if s.startswith('{') and s.endswith('}'):  # token operand, e.g. {LASTSPOKENCMD}
+            continue
+        low = s.lower()
+        if '\\' in s or '.exe' in low or '.wav' in low or s.startswith('*'):
+            continue  # path / window / sound operand (a bare '/' is NOT a path
+            # indicator: 'flight/navigation' is a real category - Finding 2)
+        if _VERSION_RE.match(s):
+            continue  # version string
+        candidate = s
+    return candidate or 'uncategorized'
+
+
+def find_commands(data: bytes, profile_name: Optional[str] = None,
+                  profile_start: Optional[int] = None,
+                  profile_guid_bytes: Optional[bytes] = None) -> list[dict]:
+    """Detect and parse commands structurally, with no category whitelist.
+
+    Every command begins with the per-command signature (GUID + length-prefixed phrase +
+    property-offset table). Detection anchors on that structure; the category is read as a
+    plain field, never used as a gate. Recognition never requires a known category name.
+    """
+    n = len(data)
+
+    # Pass 1: collect structural command hits.
+    hits = []
+    pos = 0
+    while pos < n - 20:
+        cand = _match_command_signature(data, pos)
+        if cand is None:
+            pos += 1
+            continue
+        # The profile's own header record matches the same signature - skip it.
+        is_profile = (
+            (profile_start is not None and cand['pos'] == profile_start)
+            or (profile_guid_bytes is not None and cand['guid_bytes'] == profile_guid_bytes)
+        )
+        if is_profile:
+            pos = cand['table_end']
+            continue
+        hits.append(cand)
+        pos = cand['table_end']
+
+    # Pass 2: turn each hit into a command, bounded by the next hit (or end of buffer).
     commands = []
-    strings = find_all_strings(data, 2)  # Include short strings like context codes
+    for i, h in enumerate(hits):
+        bound = hits[i+1]['pos'] if i + 1 < len(hits) else n
+        guid, _ = read_guid(data, h['pos'])
+        category = _extract_category(data, h['table_end'], bound)
 
-    # Known categories (all lowercase for matching)
-    categories = {'keyboard', 'applications', 'interface', 'system', 'navigation', 'mouse'}
-
-    # Build set of category positions for quick lookup
-    category_positions = {}
-    for pos, s in strings:
-        if s.lower() in categories:
-            category_positions[pos] = s
-
-    # Find command phrases by looking for strings followed by a category within ~800 bytes
-    # Phrases are either [bracketed] or plain text before a category
-    phrase_positions = []
-    seen_phrases = set()  # Avoid duplicates
-
-    for pos, s in strings:
-        # Skip very short strings, context codes, categories, and profile name
-        if len(s) < 4 or s in MOUSE_CONTEXT_CODES or s.lower() in categories:
-            continue
-        if profile_name and s == profile_name:
-            continue
-        # Skip strings that look like paths or app titles (not voice commands)
-        if s.startswith('*') or '\\' in s or '.exe' in s.lower():
-            continue
-
-        # Check if there's a category within a reasonable distance after this string
-        search_start = pos + len(s) + 4
-        search_end = search_start + 800
-
-        for cat_pos in category_positions:
-            if search_start < cat_pos < search_end:
-                # Found a potential phrase - verify by checking for GUID before it
-                guid_pos = pos - 20
-                if guid_pos >= 0 and pos not in seen_phrases:
-                    phrase_positions.append((pos, s))
-                    seen_phrases.add(pos)
-                break
-
-    for phrase_pos, phrase in phrase_positions:
-        # GUID should be 20 bytes before string (16 GUID + 4 length prefix)
-        guid_pos = phrase_pos - 20
-        if guid_pos < 0:
-            continue
-
-        guid, _ = read_guid(data, guid_pos)
-
-        # Find category after the phrase
-        category = None
-        search_start = phrase_pos + len(phrase) + 4
-        search_end = min(search_start + 2000, len(data))
-
-        for cat_pos, cat_str in strings:
-            if search_start < cat_pos < search_end and cat_str.lower() in categories:
-                category = cat_str
-                break
-
-        # Find actions in the range after phrase
+        # Action decoding is unchanged and out of scope for this fix; reuse the existing
+        # pattern matchers over the command's precise byte range.
+        action_start = h['phrase_end']
         actions = []
-        action_search_start = phrase_pos + len(phrase) + 4
-        action_search_end = min(action_search_start + 800, len(data))
-
-        # Find key press actions
-        key_actions = find_key_actions(data, action_search_start, action_search_end)
-        actions.extend(key_actions)
-
-        # Find mouse actions
-        mouse_actions = find_mouse_actions(data, action_search_start, action_search_end)
-        actions.extend(mouse_actions)
-
-        # Check for app launch (look for executable paths)
-        for str_pos, s in strings:
-            if action_search_start < str_pos < action_search_end:
-                if '.exe' in s.lower() or s.startswith('*'):
-                    actions.append({
-                        'type': 'run_application',
-                        'path': s
-                    })
-                    break
+        actions.extend(find_key_actions(data, action_start, bound))
+        actions.extend(find_mouse_actions(data, action_start, bound))
+        for _str_pos, s in _strings_in_range(data, action_start, bound, min_length=2):
+            if '.exe' in s.lower() or s.startswith('*'):
+                actions.append({'type': 'run_application', 'path': s})
+                break
 
         commands.append({
             'guid': guid,
-            'phrase': phrase,
-            'category': category or 'uncategorized',
-            'actions': actions
+            'phrase': h['phrase'],
+            'category': category,
+            'actions': actions,
         })
 
     return commands
 
 
 def parse_profile(data: bytes) -> dict:
-    """Parse the profile header and commands."""
-    # Read header
-    total_size, pos = read_uint32(data, 0)
-    item_count, pos = read_uint32(data, pos)
+    """Parse the profile header and commands.
 
-    # Skip offset table
-    pos += item_count * 4
+    Header layout: total_size @0, member count @4, top-level offset table @8. The first
+    offset table entry points at the profile record (GUID + length-prefixed name). The
+    old parser used 8 + item_count*4, which is four bytes early and corrupts the GUID.
+    """
+    profile_start, _ = read_uint32(data, 8)  # first top-level offset table entry
 
-    # Read profile GUID
-    profile_guid, pos = read_guid(data, pos)
-
-    # Read profile name
+    profile_guid_bytes = data[profile_start:profile_start+16]
+    profile_guid, pos = read_guid(data, profile_start)
     profile_name, pos = read_string(data, pos)
 
-    # If name not found at expected position, search for it
+    # Fallback: if the name did not read cleanly, take the first plausible string.
     if not profile_name:
-        strings = find_all_strings(data, 4)
-        # First string longer than 4 chars that's not a category is likely the profile name
-        categories = {'keyboard', 'applications', 'interface', 'system', 'navigation', 'mouse'}
-        for str_pos, s in strings:
-            if len(s) > 4 and s.lower() not in categories and s not in MOUSE_CONTEXT_CODES:
+        for _str_pos, s in _strings_in_range(data, 0, len(data), min_length=4):
+            if s not in MOUSE_CONTEXT_CODES:
                 profile_name = s
                 break
 
-    # Find commands (pass profile name to filter it out)
-    commands = find_commands(data, profile_name)
+    # Detection is structural and profile-header aware (self-match filtering).
+    commands = find_commands(data, profile_name, profile_start, profile_guid_bytes)
 
     return {
         'guid': profile_guid,
@@ -410,6 +504,8 @@ def to_xml(profile: dict) -> str:
                 if action['type'] == 'keypress':
                     ET.SubElement(action_elem, 'Key').text = action['key']
                     ET.SubElement(action_elem, 'VKCode').text = f"0x{action['vk_code']:02X}"
+                    if 'duration' in action:
+                        ET.SubElement(action_elem, 'Duration').text = str(action['duration'])
                 elif action['type'] == 'mouse':
                     ET.SubElement(action_elem, 'ContextCode').text = action['context_code']
                     ET.SubElement(action_elem, 'GeneratorName').text = action['generator_name']
@@ -438,8 +534,15 @@ def to_json(profile: dict) -> str:
         if len(actions) == 1:
             action = actions[0]
             if action['type'] == 'keypress':
-                # Single key press - use simplified format
-                json_cmd['key'] = action['key'].lower()
+                dur = action.get('duration')
+                if dur is not None and abs(dur - 0.1) > 1e-9:
+                    # Non-default hold time - the 'key' shorthand can't carry it
+                    json_cmd['actions'] = [{"type": "PressKey",
+                                            "keys": [action['key'].lower()],
+                                            "duration": dur}]
+                else:
+                    # Single key press - use simplified format
+                    json_cmd['key'] = action['key'].lower()
             elif action['type'] == 'mouse':
                 # Single mouse action - use simplified format
                 json_cmd['mouse'] = action['generator_name']
@@ -452,10 +555,14 @@ def to_json(profile: dict) -> str:
             json_actions = []
             for action in actions:
                 if action['type'] == 'keypress':
-                    json_actions.append({
+                    ja = {
                         "type": "PressKey",
                         "keys": [action['key'].lower()]
-                    })
+                    }
+                    dur = action.get('duration')
+                    if dur is not None and abs(dur - 0.1) > 1e-9:
+                        ja["duration"] = dur
+                    json_actions.append(ja)
                 elif action['type'] == 'mouse':
                     mouse_action = {
                         "type": "MouseAction",
