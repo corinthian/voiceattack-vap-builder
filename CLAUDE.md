@@ -9,7 +9,7 @@ VoiceAttack profile tools - accessibility utilities for creating and analyzing V
 1. **Generator**: JSON → VAP (create profiles from simple definitions)
 2. **Decoder**: Binary VAP → XML + JSON (reverse-engineer existing profiles)
 
-**Status:** Complete and tested. Profiles import and work in VoiceAttack.
+**Status:** Generator working (1.2.0, hardened 2026-07-09); generated profiles import into VoiceAttack (manual testing only — no automated import test exists). Decoder v1 shipped with known accuracy caveats; V2 rebuild in progress on `feature/decoder-v2` against the consolidated format spec. Conditional decoding: research complete, structured decode lands in V2.
 
 ## Commands
 
@@ -33,7 +33,7 @@ python3 -c "import zlib; d=zlib.decompress(open('file.vap','rb').read(),-15); pr
 - `.vap` files: either deflate-compressed binary OR uncompressed XML
 - VoiceAttack accepts raw XML directly (no compression needed)
 - Binary compression: `zlib.decompress(data, -15)` (raw deflate)
-- See `skills/voiceattack-decoder/docs/VAP_FORMAT.md` for binary structure details
+- See `skills/voiceattack-decoder/docs/VAP_Format_Specification.md` (v0.2, authoritative) for binary structure details
 
 ## XML Profile Structure
 
@@ -113,7 +113,7 @@ Separator: 108  Subtract: 109  Decimal: 110  Divide: 111
 - `skills/voiceattack-generator/scripts/vap_generator.py` - Generator script
 - `skills/voiceattack-generator/SKILL.md` - Skill instructions (includes screenshot workflow)
 - `skills/voiceattack-decoder/scripts/vap_decoder.py` - Decoder script
-- `skills/voiceattack-decoder/docs/VAP_FORMAT.md` - Binary format documentation
+- `skills/voiceattack-decoder/docs/VAP_Format_Specification.md` - Binary format specification (v0.2, authoritative)
 
 ## Directory Structure
 

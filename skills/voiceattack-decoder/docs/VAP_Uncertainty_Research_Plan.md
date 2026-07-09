@@ -71,6 +71,8 @@ Re-read all five original profiles with every new field definition; each must ho
 
 Amend `VAP_Format_Specification.md` to v0.2: apply the review's §2 corrections, add closures with confidence tags, update §12. Append a dated session update to `VAP_Conditional_Command_Analysis.md`. Update `Project_Status.md`. Report closed / refuted / still-open to the user. STOP — decoder changes are a separate, explicit authorization.
 
+(Status 2026-07-09: the v0.2 amendment is DONE — this phase's spec write-up shipped. `Project_Status.md` was retired; project status now lives in `Project_State_Review_Final_2026-07-09.md` + `Execution_Plan_2026-07-09.md` at the repo root. Phases 3–5 of this plan remain live, gated on the Probe B export.)
+
 ## Open inventory (summary)
 
 | # | open | current state | path |

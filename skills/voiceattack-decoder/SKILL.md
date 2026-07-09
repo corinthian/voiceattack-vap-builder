@@ -8,23 +8,26 @@ status: standalone-tool
 
 > **Note:** This is a standalone tool, not yet a Claude Code skill. Use via command line.
 
-Decode VoiceAttack `.vap` binary files to readable XML for inspection and analysis.
+Decode VoiceAttack `.vap` binary files to readable XML + JSON for inspection and analysis.
 
 ## Usage
 
 ```bash
-# Decode to stdout
+# Decode to input_decoded.xml and input_decoded.json (written next to the input)
 python3 <tool-dir>/scripts/vap_decoder.py input.vap
 
-# Decode to file
-python3 <tool-dir>/scripts/vap_decoder.py input.vap output.xml
+# Decode to custom output base (writes base.xml and base.json)
+python3 <tool-dir>/scripts/vap_decoder.py input.vap output_base
+
+# Print XML to stdout only (no files written)
+python3 <tool-dir>/scripts/vap_decoder.py input.vap --stdout
 ```
 
 ## What It Does
 
 1. Reads binary `.vap` file
-2. Detects compression (raw deflate or uncompressed)
-3. Outputs formatted XML
+2. Decompresses (raw deflate; uncompressed-XML input is NOT yet handled — planned for V2)
+3. Outputs formatted XML (inspection) and JSON (generator-compatible)
 
 ## Use Cases
 
@@ -35,7 +38,7 @@ python3 <tool-dir>/scripts/vap_decoder.py input.vap output.xml
 
 ## Binary Format
 
-See `docs/VAP_FORMAT.md` for detailed binary format documentation.
+See `docs/VAP_Format_Specification.md` (v0.2, authoritative) for the binary format. `docs/VAP_FORMAT.md` is the superseded flat-scan-era doc, retained as history.
 
 ## Future Skill Integration
 

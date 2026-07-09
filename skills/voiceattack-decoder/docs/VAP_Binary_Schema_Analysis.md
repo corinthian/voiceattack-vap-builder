@@ -1,5 +1,7 @@
 # VoiceAttack .VAP Binary Schema Analysis
 
+> **HISTORICAL (2026-07-09).** Superseded by `VAP_Format_Specification.md` (v0.2) — the authoritative spec. This document's command-entry model ("number of offset entries" + "offset table for command properties") is a proven MISREAD: that u32 is the action COUNT and the array is the first action object's member-offset table (spec §6.2 correction). Its profile numbers are also stale: corinthian decompresses to 545,818 bytes (not 545,814) with 201 commands (not ~470); base profile's header count is 101 (not ~112). Retained as early reverse-engineering history; do not implement against it.
+
 ## Overview
 
 VoiceAttack profile files (`.vap`) use a custom binary format with raw deflate compression. This document describes the internal structure discovered through reverse engineering.
@@ -34,6 +36,8 @@ VoiceAttack profile files (`.vap`) use a custom binary format with raw deflate c
     uint32[] - Offset table for command properties
     [Action data follows]
 ```
+
+(Correction 2026-07-09: the last two entries above are refuted — the u32 after the phrase is the ACTION COUNT, and the "offset table" is the first action object's 34-member offset array. See spec §6.2/§6.3.)
 
 ## Analyzed Profiles
 
@@ -236,8 +240,8 @@ Win:     91
 
 | File | Description |
 |------|-------------|
-| `base_profile_export.json` | Complete JSON export of base profile |
-| `corinthian4_export.json` | Complete JSON export of Corinthian-4 |
+| `base_profile_export.json` | Complete JSON export of base profile — session-local, never committed; does not exist in the repo (note 2026-07-09) |
+| `corinthian4_export.json` | Complete JSON export of Corinthian-4 — session-local, never committed; does not exist in the repo (note 2026-07-09) |
 | `VAP_Binary_Schema_Analysis.md` | This document |
 
 ## Next Steps

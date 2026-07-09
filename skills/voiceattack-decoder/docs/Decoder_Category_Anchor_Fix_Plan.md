@@ -1,5 +1,7 @@
 # Decoder Fix Plan: Remove Category-Whitelist Dependency from Command Recognition
 
+> **HISTORICAL (2026-07-09).** This plan was executed as commit `4233a0e`. All `vap_decoder.py` line numbers below (261/267/272/294) reference the pre-fix source and no longer resolve. Retained as the fix's design record.
+
 ## Problem
 
 `vap_decoder.py` fails to decode any commands from profiles whose category is not one of six hardcoded words. `zoom-if-else.vap` (category `camera`) decodes to `<Commands/>` — zero commands.

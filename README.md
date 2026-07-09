@@ -38,6 +38,9 @@ for finer control, you can create your own JSON or ask Claude to give you the JS
 
 2. Generate the VoiceAttack profile:
 
+```bash
+python3 skills/voiceattack-generator/scripts/vap_generator.py my_profile.json output.vap
+```
 
 3. Import `output.vap` into VoiceAttack
 
@@ -109,14 +112,14 @@ Modifiers: shift, ctrl, alt, win
 The repo also includes a decoder for inspecting existing `.vap` files. This is a standalone command-line tool, not part of the Claude plugin. 
 
 ```bash
-# Decode binary VAP to XML
+# Decode binary VAP to profile_decoded.xml + profile_decoded.json
 python3 skills/voiceattack-decoder/scripts/vap_decoder.py profile.vap
 
-# Save to file
-python3 skills/voiceattack-decoder/scripts/vap_decoder.py profile.vap output.xml
+# Decode to a custom output base (writes base.xml and base.json)
+python3 skills/voiceattack-decoder/scripts/vap_decoder.py profile.vap output_base
 ```
 
-See `skills/voiceattack-decoder/docs/VAP_FORMAT.md` for binary format documentation.
+See `skills/voiceattack-decoder/docs/VAP_Format_Specification.md` for binary format documentation.
 
 ## VoiceAttack
 
