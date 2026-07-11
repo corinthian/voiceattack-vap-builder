@@ -1,6 +1,6 @@
 # VAP Parked Uncertainties Register
 
-Status: committed 2026-07-11, Phase 2 exit criteria (`Execution_Plan_2026-07-09.md`). Every item below is the resume-cold writeup for an OPEN item routed to PARKED in `VAP_Format_Specification.md` v0.3 §12. Nothing here blocks decoder V2 or the encoder — each item is either invisible to a correct decode (a decoder that ignores it produces identical output for every profile in evidence) or explicitly contracted as a decode-only/opaque marker. This register exists so a future session can pick any one item up without re-reading the whole research history.
+Status: committed 2026-07-11, Phase 2 exit criteria (`Execution_Plan_2026-07-09.md`, retained in the maintainer's private notes — no longer in the repo). Every item below is the resume-cold writeup for an OPEN item routed to PARKED in `VAP_Format_Specification.md` v0.3 §12. Nothing here blocks decoder V2 or the encoder — each item is either invisible to a correct decode (a decoder that ignores it produces identical output for every profile in evidence) or explicitly contracted as a decode-only/opaque marker. This register exists so a future session can pick any one item up without re-reading the whole research history.
 
 Format per item: what it is, what's known, what evidence exists, what would close it.
 
