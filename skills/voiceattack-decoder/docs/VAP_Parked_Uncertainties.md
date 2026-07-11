@@ -122,6 +122,20 @@ Format per item: what it is, what's known, what evidence exists, what would clos
 
 ---
 
+## 10. ActionType 25's `m[11]=1` clear-buffer flag
+
+**What it is.** Probe B's `dictation set` command built "Start Dictation Mode (Clearing Dictation Buffer)" as its ActionType-25 sample, and that action reads `m[11]=1`. The reading "1 = clear the dictation buffer before starting" is a plausible label, not a confirmed one — ActionType 25 itself (Start Dictation Mode) is SOLID from Probe B, but this specific field is not.
+
+**What's known.** Single sample, no contrast build. The probe spec (`VAP_Probe_Specs_A_B.md`) only called for "whichever exist" from a `Start Listening / Stop Listening / Start Dictation / Stop Dictation / Clear Dictation Buffer / Paste Dictation` list — it did not call for a non-clearing "Start Dictation Mode" variant, so there is no `m[11]=0` (or absent) counter-sample to confirm the flag actually toggles rather than always reading 1, or that 1 means "clear" rather than something else entirely.
+
+**Evidence.** `VAP_Format_Specification.md` §9.1 ("25 additionally carries a flag..."); `schema/vap_capability_dictionary.json`, ActionType 25 (`DictationMode`) `fields.clear_buffer_flag`; Probe B `dictation set` action[2] (`m[11]=1`).
+
+**What would close it.** Build two Start Dictation Mode actions in the same profile — one with the "clearing" option checked, one without — self-labeled by command phrase, and confirm `m[11]` differs (1 vs 0, or 1 vs absent). Cheap, bundle with items 6 and 7 (Write color/shape, Set-Integer modes 2/3) if a Probe C is ever opened.
+
+---
+
 ## Closed by Probe B (2026-07-11) — reference only, not open
 
-For completeness, everything Probe B DID close (see `VAP_Format_Specification.md` v0.3 for the authoritative writeups; not reproduced here): ActionTypes 3 (Launch), 13 (Say), 24 (SetClipboard, refuting the old PasteDictation attribution), 25/26/27 (dictation mode, promoted to SOLID), 50/51 (Start/Stop Listening); the Set-action value-source-mode model (m[14]) and arithmetic-operator enum (m[20], modes 8/9 only); the Set-Boolean value-vs-order confound (m[14] is the value: 0=True/1=False); Set-Small-Int's mootness in VoiceAttack 2 (merges into Set Integer, code 18 kept legacy/decode-only); mouse click duration (m[4]), scroll click count (m[3], superseding the old "-20 from length prefix" claim), and the cursor-Move context (m[11]/m[12]).
+For completeness, everything Probe B DID close outright (see `VAP_Format_Specification.md` v0.3 for the authoritative writeups; not reproduced here): ActionTypes 3 (Launch), 13 (Say), 24 (SetClipboard, refuting the old PasteDictation attribution), 25/26/27 (the ActionType codes themselves, promoted to SOLID), 50/51 (Start/Stop Listening); the Set-action value-source-mode model (m[14]) and arithmetic-operator enum (m[20], modes 8/9 only); the Set-Boolean value-vs-order confound (m[14] is the value: 0=True/1=False); Set-Small-Int's mootness in VoiceAttack 2 (merges into Set Integer, code 18 kept legacy/decode-only); mouse click duration (m[4]), scroll click count (m[3], superseding the old "-20 from length prefix" claim), and the cursor-Move context (m[11]/m[12]). Item 10 above is the one field Probe B sampled but did NOT fully close — the ActionType-25 code is solid, its `m[11]` flag meaning is not.
+
+**Note on §12 items 11 and 13.** These two spec-level PARKED items are deliberately not given their own register entries above: item 11 (unattributed census-code residue) has no evidence to write up beyond "some codes remain unnamed, no further probe planned" and item 13 (Set Small Int's own field layout) is moot — VoiceAttack 2 no longer emits code 18, so there is no build that could ever sample it. Both are self-contained in the spec text; expanding them here would add words without adding anything a future session could act on.
