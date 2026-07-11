@@ -233,6 +233,7 @@ Rule: {button}_{action} maps to {button-code}{action-code}; scroll names map dir
 | back_toggle | 4T |
 | back_triple_click | 4TC |
 | back_up | 4U |
+| cursor_move | Move |
 | forward_click | 5C |
 | forward_double_click | 5DC |
 | forward_down | 5D |

@@ -58,6 +58,12 @@ def derive_mouse_names(mouse):
             derived[f"{bname}_{aname}"] = f"{bcode}{acode}"
     for sname, scode in scrolls.items():
         derived[sname] = scode
+    # cursor_move is a distinct context string (Probe B), not one of the 34 button/scroll
+    # codes, but it IS a dictionary-defined emittable name — include it so a decoder that
+    # decodes the Move context (spec sec 9.3) is not flagged as emitting an orphan name.
+    cursor_move = mouse.get("cursor_move") or {}
+    if cursor_move.get("context_code"):
+        derived["cursor_move"] = cursor_move["context_code"]
     return derived
 
 
