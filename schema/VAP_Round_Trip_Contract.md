@@ -20,6 +20,13 @@ For every reference profile `x`: `decode(encode(decode(x))) == decode(x)`, compa
 - Decoder-v1 legacy names (bare `subtract`, `backtick`, `lbracket`, media-key names, …) are aliases precisely so JSON decoded before this contract keeps regenerating.
 - New discoveries (Probe B) enter as new entries with honest confidence tags; promotion to `solid` requires the cross-validation gate of the research plan (holds across all five reference profiles).
 
+## Out of round-trip scope: profile references (documented limitation, not a fidelity bug)
+
+VoiceAttack profiles can include commands from other profiles ("referenced profiles" — the maintainer's `base profile` is referenced by every working and test profile). That linkage lives in VoiceAttack's internal database and is **not present in `.vap` exports in any form**: a byte-level search of all five referencing reference profiles for the base profile's GUID (raw .NET-endian bytes AND string form) and its name found zero occurrences (verified 2026-07-11). Consequently:
+
+1. **What the decoder sees:** only the profile's OWN commands — corinthian's 201 equals its own header count; no referenced commands are embedded, and nothing in the bytes identifies which profiles it references. Decoder output that contains no reference information is a faithful decode, not a gap.
+2. **References cannot survive the translation process.** decode → encode → import necessarily loses the linkage, because the export it starts from never had it (confirmed by the maintainer: the reference does not survive VoiceAttack's own export/import either). After importing any generated or round-tripped profile, referenced profiles must be re-attached by hand in VoiceAttack's profile options. Neither tool can fix this; neither tool should be blamed for it; the fixpoint test does not and cannot cover it.
+
 ## Tool obligations
 
 - Both tools load their name tables from the dictionary (or from a build step that generates their tables from it, verified identical by the audit tool). Hand-edited name tables in tool source are a contract violation.
