@@ -1,11 +1,11 @@
-GENERATED from vap_capability_dictionary.json v0.1.0 — do not hand-edit; regenerate with dictionary_tools.py render
+GENERATED from vap_capability_dictionary.json v0.2.0 — do not hand-edit; regenerate with dictionary_tools.py render
 
 # VAP Capability Dictionary
 
 - Name: vap_capability_dictionary
-- Version: 0.1.0
-- Date: 2026-07-09
-- Spec: skills/voiceattack-decoder/docs/VAP_Format_Specification.md v0.2
+- Version: 0.2.0
+- Date: 2026-07-11
+- Spec: skills/voiceattack-decoder/docs/VAP_Format_Specification.md v0.3
 - Purpose: Single machine-readable statement of everything the VAP decoder understands. Contract for decoder V2 output and the encoder module's input. All key/mouse/action names in both tools derive from this file; nothing is hand-maintained twice.
 - Canonical rule: Tools EMIT canonical names only and ACCEPT canonical + all listed aliases. Adding an alias is non-breaking; changing a canonical name is breaking (bump major). Decoder-v1 legacy names are preserved as aliases so previously decoded JSON keeps regenerating.
 
@@ -22,40 +22,39 @@ GENERATED from vap_capability_dictionary.json v0.1.0 — do not hand-edit; regen
 |---|---|---|---|---|---|
 | 0 | PressKey | PressKey | solid | canonical |  |
 | 2 | Pause | Pause | solid | canonical |  |
+| 3 | Launch | Launch | solid | canonical | Binary code + layout closed by Probe B (path 'C:\probe\launch-test.exe', args '--a1 --a2', workdir 'C:\probe\wd'). Decoder v1 emits run_application - name reconciliation is V2/encoder scope. |
 | 8 | KeyDown | KeyDown | solid | canonical |  |
 | 9 | KeyUp | KeyUp | solid | canonical |  |
-| 12 | MouseAction | MouseAction | solid | canonical | Context-code enum sweep, click-count slot, cursor X/Y are Probe B targets |
+| 12 | MouseAction | MouseAction | solid | canonical | Context enum sweep, click duration, scroll count, and cursor Move closed by Probe B. |
+| 13 | Say | Say | solid | canonical | Binary code + full layout closed by Probe B (self-labeling: text 'say-marker', volume 43, rate 7). |
 | 16 | ExecuteCommand | ExecuteCommand | solid | warn | Binary code CSV-confirmed; member layout unmapped; XML name from external reference |
 | 17 | KillCommand | — | solid | warn |  |
-| 18 | SetSmallInt | — | solid | warn | Layout unsampled - Probe B |
+| 18 | SetSmallInt | — | parked | opaque | MOOT in VoiceAttack 2: Small Int merged into Integer (Probe B, user-confirmed in-profile). Building 'Set Small Int' in VA2 serializes as ActionType 37 (SetInteger) mode 0, not this code. Code 18 retained legacy/decode-only for pre-VA2 profiles; its own layout cannot be re-sampled from a VA2 build and stays unmapped. |
 | 19 | BeginCondition | — | solid | canonical | Compare gate: m[2] in {19,63,30}. Compound (multi-sub-condition) blocks are decode-only: emit first sub-compare + explicit compound marker |
 | 20 | EndCondition | — | solid | canonical |  |
 | 21 | SetText | — | solid | warn |  |
 | 22 | ExecuteExternalPlugin | — | solid | warn |  |
-| 23 | Write | — | solid | warn | Write-to-log/screen; distinct from Say (binary code for Say never sampled) |
-| 24 | PasteDictation | — | plausible | warn |  |
-| 25 | DictationMode | — | plausible | warn |  |
-| 26 | StopDictation | — | plausible | warn |  |
-| 27 | ClearDictationBuffer | — | plausible | warn |  |
+| 23 | Write | — | solid | warn | Write-to-log/screen; distinct from Say (13). Text field reconfirmed by Probe B ('write-marker'); color/shape UI parameters found in no nonzero slot with one default-value sample - parked, see VAP_Parked_Uncertainties.md item 6. |
+| 24 | SetClipboard | SetClipboard | solid | canonical | Binary code + layout closed by Probe B (text 'clip-marker'). REFUTES the removed 'PasteDictation' entry (was binary_code 24, confidence plausible): 'Paste Dictation' does not exist as a VoiceAttack 2 action - confirmed in-profile (Probe B's dictation sweep recorded a SetClipboard action whose text field reads "No such action as 'Paste dictation'", not a distinct action type). |
+| 25 | DictationMode | — | solid | warn | Start Dictation Mode. Promoted solid by Probe B (self-labeling command-phrase build). |
+| 26 | StopDictation | — | solid | warn | Stop Dictation Mode. Promoted solid by Probe B. |
+| 27 | ClearDictationBuffer | — | solid | warn | Promoted solid by Probe B. |
 | 29 | Else | — | solid | canonical |  |
 | 30 | BeginLoopWhile | — | solid | canonical |  |
 | 31 | EndLoop | — | solid | canonical |  |
 | 32 | Marker | — | solid | warn |  |
 | 33 | JumpToMarker | — | solid | warn |  |
 | 35 | PlaySound | — | solid | warn |  |
-| 36 | SetBoolean | — | solid | warn |  |
-| 37 | SetInteger | — | solid | warn |  |
+| 36 | SetBoolean | — | solid | warn | m[14] is the same value-source-mode concept as SetInteger's m[14] but a DIFFERENT per-type dropdown ordering - do not conflate |
+| 37 | SetInteger | — | solid | warn | Set Small Int (code 18) is legacy/decode-only in VA2 - see that entry. Decoder hazard: m[16]/m[19]/m[23] may hold stale values from a previously-selected mode; gate every read on m[14], never infer mode from which slots are populated (plausible, single-sample). |
 | 38 | SetDecimal | — | solid | warn |  |
 | 40 | QuickInput | — | solid | warn |  |
-| 50 | — | — | parked | opaque | Suspected start-listening - Probe B |
-| 51 | — | — | parked | opaque | Suspected stop-listening - Probe B |
+| 50 | StartListening | — | solid | warn | Start VoiceAttack Listening. Closed by Probe B; no fields observed beyond the shared envelope - layout is empty, not unknown. |
+| 51 | StopListening | — | solid | warn | Stop VoiceAttack Listening. Closed by Probe B; no fields observed beyond the shared envelope - layout is empty, not unknown. |
 | 62 | PauseVariable | — | solid | warn | Pause a variable number of seconds; distinct from fixed Pause (2) |
 | 63 | ElseIf | — | solid | canonical |  |
 | 64 | ExitCommand | — | solid | warn |  |
 | 67 | KeyToggle | KeyToggle | solid | canonical |  |
-| — | Launch | Launch | parked | warn | Decoder v1 emits run_application; binary code + layout - Probe B |
-| — | Say | Say | parked | warn | Generator emits it today (XML side solid); binary code never sampled (absent from every CSV) - Probe B |
-| — | SetClipboard | SetClipboard | parked | warn | Binary code + layout - Probe B |
 
 ## Keys
 
@@ -310,5 +309,5 @@ Coding rule: 0-indexed position in that value-type's dropdown (spec sec 8.2)
 
 ## Parked Registry Pointer
 
-Spec sec 12 routes all open items; Probe B targets: ActionTypes 50/51, Say/Launch/SetClipboard codes+layouts, mouse enum/X/Y, set-op enum, Set-Boolean confound, Set-SmallInt layout
+Probe B (2026-07-11) closed its targets: ActionTypes 3/13/24/25/26/27/50/51, mouse click-duration/scroll-count/Move, Set-action value-source-mode + arithmetic-op model, Set-Boolean confound, Set-SmallInt-is-moot. Spec sec 12 and skills/voiceattack-decoder/docs/VAP_Parked_Uncertainties.md route everything still open: compound m[31] interior, header @8 command-list index, ~24 unmapped near-constant slots, trailing-region structure, local-var pool anchor, Write color/shape, Set-Integer value-source modes 2/3, Set-Integer stale-operand-slot hazard, mouse SPECIAL context + untested button/action combinations.
 
