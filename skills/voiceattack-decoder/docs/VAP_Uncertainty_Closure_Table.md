@@ -1,6 +1,8 @@
 # VAP Uncertainty Research — Phase 0–2 Closure Table (2026-07-08)
 
 > **HISTORICAL (2026-07-09).** All closures and the ActionType table are folded into `VAP_Format_Specification.md` v0.2, which alone is authoritative. This file is retained as the evidence trail; Probe B targets and parked items are tracked in spec §12.
+>
+> **UPDATE (2026-07-11).** Probe B executed and closed — see `VAP_Probe_Specs_A_B.md`'s banner and `VAP_Format_Specification.md` v0.3. The row-3 (mouse, PARTIAL) and row-4 (Set-Boolean, PLAUSIBLE) verdicts below are now CLOSED in v0.3; row-7 (compound m[31], PARTIAL) stays PARTIAL/decode-only by design. This file is not updated in place — v0.3 is authoritative for all current verdicts; `VAP_Parked_Uncertainties.md` is authoritative for everything still open.
 
 Session run of `VAP_Uncertainty_Research_Plan.md`, Phases 0→2, stopped at the closure
 gate per user direction. Analysis-only; scripts in scratchpad; no project docs edited.

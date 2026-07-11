@@ -1,3 +1,5 @@
+> **EXECUTED 2026-07-11.** Probe B was built and exported by Richard 2026-07-11 (`Probe B-Profile.vap`, 17,888 B decompressed, 10 commands / 32 actions, all envelope-clean). Every item in "What Probe B must close" below is CLOSED — results are folded into `VAP_Format_Specification.md` v0.3 (§9.1, §9.3, §9.4, §6.4). Items that turned out to need a further build (Set-Integer value-source modes 2/3, Write color/shape, mouse `SPECIAL` context) are in `VAP_Parked_Uncertainties.md`, not re-opened here. Probe A stays dropped per the 2026-07-08 ruling below.
+
 # VAP Probe Spec — Probe B (draft, 2026-07-08)
 
 Phase-3 probe spec for `VAP_Uncertainty_Research_Plan.md`, refined against the Phase-0–2
