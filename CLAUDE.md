@@ -9,7 +9,7 @@ VoiceAttack profile tools - accessibility utilities for creating and analyzing V
 1. **Generator**: JSON → VAP (create profiles from simple definitions)
 2. **Decoder**: Binary VAP → XML + JSON (reverse-engineer existing profiles)
 
-**Status:** Generator working (1.2.0, hardened 2026-07-09); generated profiles import into VoiceAttack (manual testing only — no automated import test exists). Decoder v1 shipped with known accuracy caveats; V2 rebuild in progress on `feature/decoder-v2` against the consolidated format spec. Conditional decoding: research complete, structured decode lands in V2.
+**Status:** Generator working (1.2.0, hardened 2026-07-09); generated profiles import into VoiceAttack (manual testing only — no automated import test exists). Decoder **V2 built on `feature/decoder-v2`** (`scripts/vap2/`, stdlib-only object-walk decoder replacing v1's flat scan): all six reference profiles decode with zero chain breaks, corinthian 201/1168 and Probe B 32/32 fully decoded, structured conditionals, regression harness checked in (`tests/`), acceptance criteria pass (see `docs/V2_Soak_Report.md`). v1 (`vap_decoder.py`) stays in-tree during soak. Pending: VoiceAttack import test of V2 output, then merge/tag. Conditional decoding: research complete, structured decode landed in V2.
 
 ## Commands
 
@@ -17,7 +17,13 @@ VoiceAttack profile tools - accessibility utilities for creating and analyzing V
 # Generate VAP from JSON
 python3 skills/voiceattack-generator/scripts/vap_generator.py input.json output.vap
 
-# Decode binary VAP to XML + JSON (dual output)
+# Decode binary VAP — V2 (object-walk; normative JSON, gated XML with --xml)
+python3 -m vap2 input.vap [output_base] [--stdout] [--xml]   # run from scripts/ dir
+# V2 regression harness + soak sign-off
+python3 -m unittest discover -s skills/voiceattack-decoder/tests
+python3 skills/voiceattack-decoder/tests/soak.py
+
+# Decode binary VAP — v1 (legacy, in-tree during soak): XML + JSON dual output
 python3 skills/voiceattack-decoder/scripts/vap_decoder.py input.vap [output_base]
 # Produces: output_base.xml and output_base.json (or input_decoded.* if no output specified)
 

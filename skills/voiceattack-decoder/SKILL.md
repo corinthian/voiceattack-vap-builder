@@ -8,26 +8,34 @@ status: standalone-tool
 
 > **Note:** This is a standalone tool, not yet a Claude Code skill. Use via command line.
 
-Decode VoiceAttack `.vap` binary files to readable XML + JSON for inspection and analysis.
+Decode VoiceAttack `.vap` files to structured JSON (normative) + gated XML for inspection.
 
-## Usage
+## Usage — V2 (`vap2`, current)
+
+V2 walks the binary object model (spec v0.3), emitting canonical names from the capability
+dictionary and explicit typed unknowns for anything outside the SOLID set. Run from the
+`scripts/` directory so the package resolves:
 
 ```bash
-# Decode to input_decoded.xml and input_decoded.json (written next to the input)
-python3 <tool-dir>/scripts/vap_decoder.py input.vap
-
-# Decode to custom output base (writes base.xml and base.json)
-python3 <tool-dir>/scripts/vap_decoder.py input.vap output_base
-
-# Print XML to stdout only (no files written)
-python3 <tool-dir>/scripts/vap_decoder.py input.vap --stdout
+cd <tool-dir>/scripts
+python3 -m vap2 input.vap                 # writes input_decoded.json
+python3 -m vap2 input.vap output_base     # writes output_base.json
+python3 -m vap2 input.vap --stdout        # JSON to stdout
+python3 -m vap2 input.vap --stdout --xml  # gated secondary XML (prelim §8)
 ```
 
-## What It Does
+Output schema is frozen in `docs/V2_JSON_Schema.md`. Both containers are handled: raw-deflate
+binary via the object walk, and uncompressed `<Profile>` XML input (v1 crashed on this).
 
-1. Reads binary `.vap` file
-2. Decompresses (raw deflate; uncompressed-XML input is NOT yet handled — planned for V2)
-3. Outputs formatted XML (inspection) and JSON (generator-compatible)
+## What It Does (V2)
+
+1. Sniffs the container (raw-deflate binary or `<Profile>` XML).
+2. Walks the profile → commands → 34-slot `CommandAction` objects, dereferencing each member
+   slot by type per family (keys, mouse, Say, Launch, Set-*, conditions).
+3. Emits normative JSON with per-action provenance and unknown markers; category is a
+   provenance-tagged heuristic. Regression harness in `tests/`.
+
+> **Legacy:** `scripts/vap_decoder.py` (v1, flat pattern scan) stays in-tree during soak.
 
 ## Use Cases
 
