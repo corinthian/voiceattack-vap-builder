@@ -131,6 +131,28 @@ Once user confirms, run the generator with the final JSON.
 | MouseAction | action, scroll_clicks |
 | Pause | duration (seconds) |
 | Say | text, volume (0-100), rate |
+| BeginCondition | condition (required) - opens an if block |
+| ElseIf | condition (required) - else-if branch |
+| Else | (no parameters) - else branch |
+| EndCondition | (no parameters) - closes the block |
+
+## Condition Blocks
+
+Interleave condition actions with ordinary actions to branch inside a command. `BeginCondition`/`ElseIf` require a `condition` object: `{"valueType": "Text", "operator": "<name>", "leftOperand": "<string>", "value": "<string>"}`. Text operators: Equals, Does Not Equal, Starts With, Does Not Start With, Ends With, Does Not End With, Contains, Does Not Contain, Has Been Set, Has Not Been Set. Nesting and `Else` are supported.
+
+```json
+{"trigger": "zoom [out; in]", "actions": [
+  {"type": "BeginCondition", "condition": {"valueType": "Text", "operator": "Ends With", "leftOperand": "{LASTSPOKENCMD}", "value": "out"}},
+  {"type": "PressKey", "keys": ["f"], "duration": 1.5},
+  {"type": "ElseIf", "condition": {"valueType": "Text", "operator": "Ends With", "leftOperand": "{LASTSPOKENCMD}", "value": "in"}},
+  {"type": "PressKey", "keys": ["r"], "duration": 1.5},
+  {"type": "EndCondition"}
+]}
+```
+
+**Scope:** `valueType` must be `"Text"` - other value types (SmallInteger/Boolean/Integer/Decimal) are rejected because their XML carriers are unverified.
+
+**Validation:** unlike other generator defects (warn-and-drop), any malformed condition structure aborts generation with exit 1 and no output file - a dropped condition action would corrupt the block's pairing indexes and produce an importable-but-broken profile.
 
 ## Mouse Actions
 
