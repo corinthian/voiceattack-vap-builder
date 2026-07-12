@@ -81,8 +81,9 @@ def _parse_action(act_el, index, dictionary):
     duration = _local_float(act_el, "Duration")
     if duration is not None:
         base["duration"] = duration
+    # Code 23 rebinds Context as `text` below (binary-path record key); skip the generic key.
     context = _local_text(act_el, "Context")
-    if context is not None:
+    if context is not None and code != 23:
         base["context"] = context
 
     keycodes = _parse_keycodes(act_el, dictionary)
@@ -97,6 +98,18 @@ def _parse_action(act_el, index, dictionary):
         base["condition"] = _parse_condition(act_el, dictionary)
     if code in conditions.BLOCK_STRUCTURE_TYPES:
         base["block"] = {"pairing": _local_int(act_el, "ConditionPairing")}
+
+    # Payload bindings for Write (23) and SetDecimal (38) only — other Set-family/FreeType
+    # codes resolve names but bind no payload yet (spec sec 9.4 XML note, wave 2 scope).
+    if code == 23:
+        # WriteToLog text carrier is Context; present-but-empty binds "" (ground truth 4.8/4.9).
+        base["text"] = _local_text_or_empty(act_el, "Context")
+    elif code == 38:
+        # DecimalSet carriers INFERRED by IntSet analogy — target ConditionSetName, value
+        # DecimalContext1 (string form, matching the binary path's SetDecimal record keys);
+        # no public XML sample exists, pending the VA import probe (dictionary 0.4.0 note).
+        base["targetVariable"] = _local_text(act_el, "ConditionSetName")
+        base["value"] = _local_text(act_el, "DecimalContext1")
     return base
 
 

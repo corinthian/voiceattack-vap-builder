@@ -549,6 +549,97 @@ class XmlElseAndValuelessTest(unittest.TestCase):
         self.assertNotIn("condition", self.actions[3])
 
 
+# WriteToLog from ground-truth sample 4.8 (Antaniserse/VAExtensions, verbatim fields) plus a
+# present-but-empty Context variant; DecimalSet from the INFERRED template — target in
+# ConditionSetName, value in DecimalContext1 by IntSet analogy, NO public sample exists
+# (dictionary 0.4.0 marks the carrier plausible pending the VA import probe).
+XML_SET_WRITE_FIXTURE = """<?xml version="1.0" encoding="utf-8"?>
+<Profile xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Id>c9f2d4e5-0000-4000-8000-000000000001</Id>
+  <Name>XML Set Write Fixture</Name>
+  <Commands>
+    <Command>
+      <Id>c9f2d4e5-0000-4000-8000-000000000002</Id>
+      <CommandString>set and write</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Ordinal>0</Ordinal>
+          <ActionType>WriteToLog</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>{TXT:VxResult}</Context>
+          <X>3</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>0</InputMode>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <DecimalContext1>0</DecimalContext1>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>1</Ordinal>
+          <ActionType>WriteToLog</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context></Context>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>0</InputMode>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <DecimalContext1>0</DecimalContext1>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>2</Ordinal>
+          <ActionType>DecimalSet</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>0</InputMode>
+          <ConditionSetName xml:space="preserve">bbq</ConditionSetName>
+          <ConditionSetCondition />
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <DecimalContext1>2.25</DecimalContext1>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+  </Commands>
+</Profile>
+"""
+
+
+class XmlSetWriteTest(unittest.TestCase):
+    """Wave-2 payload bindings: WriteToLog (23) text←Context with the present-empty vs
+    absent distinction, DecimalSet (38, INFERRED carrier) targetVariable←ConditionSetName /
+    value←DecimalContext1 in string form — record keys match the binary path exactly."""
+
+    def setUp(self):
+        self.prof = vap2.decode_bytes(XML_SET_WRITE_FIXTURE.encode("utf-8"), DICT)
+        self.actions = self.prof["commands"][0]["actions"]
+
+    def test_writetolog_code_and_text(self):
+        a = self.actions[0]
+        self.assertEqual(a["actionType"], {"code": 23, "name": "Write"})
+        self.assertEqual(a["text"], "{TXT:VxResult}")
+        self.assertNotIn("context", a)  # rebound as text, no duplicate generic key
+
+    def test_writetolog_empty_context_binds_empty_string(self):
+        self.assertEqual(self.actions[1]["text"], "")
+
+    def test_decimalset_code_and_bindings(self):
+        a = self.actions[2]
+        self.assertEqual(a["actionType"], {"code": 38, "name": "SetDecimal"})
+        self.assertEqual(a["targetVariable"], "bbq")
+        self.assertEqual(a["value"], "2.25")
+
+
 class FixpointStubTest(unittest.TestCase):
     """decode(encode(decode(x))) == decode(x) — the encoder's definition of done
     (round-trip contract). The encoder is out of V2 scope (plan §9); this stub documents

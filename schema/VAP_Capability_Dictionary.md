@@ -1,10 +1,10 @@
-GENERATED from vap_capability_dictionary.json v0.3.0 — do not hand-edit; regenerate with dictionary_tools.py render
+GENERATED from vap_capability_dictionary.json v0.4.1 — do not hand-edit; regenerate with dictionary_tools.py render
 
 # VAP Capability Dictionary
 
 - Name: vap_capability_dictionary
-- Version: 0.3.0
-- Date: 2026-07-11
+- Version: 0.4.1
+- Date: 2026-07-12
 - Spec: skills/voiceattack-decoder/docs/VAP_Format_Specification.md v0.3
 - Purpose: Single machine-readable statement of everything the VAP decoder understands. Contract for decoder V2 output and the encoder module's input. All key/mouse/action names in both tools derive from this file; nothing is hand-maintained twice.
 - Canonical rule: Tools EMIT canonical names only and ACCEPT canonical + all listed aliases. Adding an alias is non-breaking; changing a canonical name is breaking (bump major). Decoder-v1 legacy names are preserved as aliases so previously decoded JSON keeps regenerating.
@@ -29,26 +29,26 @@ GENERATED from vap_capability_dictionary.json v0.3.0 — do not hand-edit; regen
 | 13 | Say | Say | solid | canonical | Binary code + full layout closed by Probe B (self-labeling: text 'say-marker', volume 43, rate 7). |
 | 16 | ExecuteCommand | ExecuteCommand | solid | warn | Binary code CSV-confirmed; member layout unmapped; XML name from external reference |
 | 17 | KillCommand | — | solid | warn |  |
-| 18 | SetSmallInt | — | parked | opaque | MOOT in VoiceAttack 2: Small Int merged into Integer (Probe B, user-confirmed in-profile). Building 'Set Small Int' in VA2 serializes as ActionType 37 (SetInteger) mode 0, not this code. Code 18 retained legacy/decode-only for pre-VA2 profiles; its own layout cannot be re-sampled from a VA2 build and stays unmapped. |
+| 18 | SetSmallInt | ConditionSet | parked | opaque | MOOT in VoiceAttack 2: Small Int merged into Integer (Probe B, user-confirmed in-profile). Building 'Set Small Int' in VA2 serializes as ActionType 37 (SetInteger) mode 0, not this code. Code 18 retained legacy/decode-only for pre-VA2 profiles; its own layout cannot be re-sampled from a VA2 build and stays unmapped. XML name ConditionSet (legacy VA1 'condition' = small int): target ConditionSetName, value X int text node — real XML exports (mandiant/IDA_Pro_VoiceAttack_profile, Antaniserse/VAExtensions; 2026-07-12). |
 | 19 | BeginCondition | ConditionStart | solid | canonical | Compare gate: m[2] in {19,63,30}. Compound (multi-sub-condition) blocks are decode-only: emit first sub-compare + explicit compound marker. XML ActionType name verified against real VoiceAttack XML exports (mandiant/IDA_Pro_VoiceAttack_profile, Penecruz/VAICOM-Community; 2026-07-11). |
 | 20 | EndCondition | ConditionEnd | solid | canonical | XML ActionType name verified against real VoiceAttack XML exports (mandiant/IDA_Pro_VoiceAttack_profile, Penecruz/VAICOM-Community; 2026-07-11). |
-| 21 | SetText | — | solid | warn |  |
+| 21 | SetText | TextSet | solid | warn | XML: target Context, value Context2 (xml:space=preserve) — real XML exports, 10+ profiles incl. Antaniserse/VAExtensions (2026-07-12). |
 | 22 | ExecuteExternalPlugin | — | solid | warn |  |
-| 23 | Write | — | solid | warn | Write-to-log/screen; distinct from Say (13). Text field reconfirmed by Probe B ('write-marker'); color/shape UI parameters found in no nonzero slot with one default-value sample - parked, see VAP_Parked_Uncertainties.md item 6. |
+| 23 | Write | WriteToLog | solid | warn | Write-to-log/screen; distinct from Say (13). Text field reconfirmed by Probe B ('write-marker'); color/shape UI parameters found in no nonzero slot with one default-value sample - parked, see VAP_Parked_Uncertainties.md item 6. XML: text Context (variable tokens legal), X = color code (0/1/3/6 observed, name mapping unverified) — real XML exports (Antaniserse/VAExtensions, Penecruz/VAICOM-Community; 2026-07-12). |
 | 24 | SetClipboard | SetClipboard | solid | canonical | Binary code + layout closed by Probe B (text 'clip-marker'). REFUTES the removed 'PasteDictation' entry (was binary_code 24, confidence plausible): 'Paste Dictation' does not exist as a VoiceAttack 2 action - confirmed in-profile (Probe B's dictation sweep recorded a SetClipboard action whose text field reads "No such action as 'Paste dictation'", not a distinct action type). |
 | 25 | DictationMode | — | solid | warn | Start Dictation Mode. Promoted solid by Probe B (self-labeling command-phrase build). |
 | 26 | StopDictation | — | solid | warn | Stop Dictation Mode. Promoted solid by Probe B. |
 | 27 | ClearDictationBuffer | — | solid | warn | Promoted solid by Probe B. |
 | 29 | Else | ConditionElse | solid | canonical | XML ActionType name verified against real VoiceAttack XML exports (mandiant/IDA_Pro_VoiceAttack_profile, Penecruz/VAICOM-Community; 2026-07-11). |
-| 30 | BeginLoopWhile | — | solid | canonical |  |
-| 31 | EndLoop | — | solid | canonical |  |
+| 30 | BeginLoopWhile | WhileStart | solid | canonical | XML ActionType name verified against real XML exports (SavageCore/EDDB_Scraper; 2026-07-12). |
+| 31 | EndLoop | WhileEnd | solid | canonical | XML ActionType name verified against real XML exports (SavageCore/EDDB_Scraper; 2026-07-12). |
 | 32 | Marker | — | solid | warn |  |
 | 33 | JumpToMarker | — | solid | warn |  |
 | 35 | PlaySound | — | solid | warn |  |
-| 36 | SetBoolean | — | solid | warn | m[14] is the same value-source-mode concept as SetInteger's m[14] but a DIFFERENT per-type dropdown ordering - do not conflate |
-| 37 | SetInteger | — | solid | warn | Set Small Int (code 18) is legacy/decode-only in VA2 - see that entry. Decoder hazard: m[16]/m[19]/m[23] may hold stale values from a previously-selected mode; gate every read on m[14], never infer mode from which slots are populated (plausible, single-sample). |
-| 38 | SetDecimal | — | solid | warn |  |
-| 40 | QuickInput | — | solid | warn |  |
+| 36 | SetBoolean | BooleanSet | solid | warn | m[14] is the same value-source-mode concept as SetInteger's m[14] but a DIFFERENT per-type dropdown ordering - do not conflate. XML: target Context, value InputMode (0=True, 1=False, matches binary m[14] enum exactly; both polarities sampled) — real XML exports (mandiant/IDA_Pro_VoiceAttack_profile; 2026-07-12). |
+| 37 | SetInteger | IntSet | solid | warn | Set Small Int (code 18) is legacy/decode-only in VA2 - see that entry. Decoder hazard: m[16]/m[19]/m[23] may hold stale values from a previously-selected mode; gate every read on m[14], never infer mode from which slots are populated (plausible, single-sample). XML name IntSet: target ConditionSetName, literal value X int text node; the stale-slot hazard recurs at the XML layer (Context/Context2 observed carrying leftover author strings on IntSet — never read them as operands) — real XML exports (Antaniserse/VAExtensions, SavageCore/EDDB_Scraper; 2026-07-12). |
+| 38 | SetDecimal | DecimalSet | solid | warn | XML name/carriers (target ConditionSetName, value DecimalContext1) inferred by IntSet analogy, then CONFIRMED by VA import probe 2026-07-12: generated Zoom Zoom profile imported, WriteToLog printed {DEC:bbq} as 2.25/0.75 per branch — carriers read correctly by VoiceAttack. |
+| 40 | QuickInput | FreeType | solid | warn | XML: text Context (variable tokens legal), Duration = per-keystroke delay seconds (0.05 observed), InputMode=1 on both samples (semantics unverified) — real XML exports (SavageCore/EDDB_Scraper, 2 samples; 2026-07-12). |
 | 50 | StartListening | — | solid | warn | Start VoiceAttack Listening. Closed by Probe B; no fields observed beyond the shared envelope - layout is empty, not unknown. |
 | 51 | StopListening | — | solid | warn | Stop VoiceAttack Listening. Closed by Probe B; no fields observed beyond the shared envelope - layout is empty, not unknown. |
 | 62 | PauseVariable | — | solid | warn | Pause a variable number of seconds; distinct from fixed Pause (2) |
