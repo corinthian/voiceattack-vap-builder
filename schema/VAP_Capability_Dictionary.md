@@ -1,9 +1,9 @@
-GENERATED from vap_capability_dictionary.json v0.2.0 — do not hand-edit; regenerate with dictionary_tools.py render
+GENERATED from vap_capability_dictionary.json v0.3.0 — do not hand-edit; regenerate with dictionary_tools.py render
 
 # VAP Capability Dictionary
 
 - Name: vap_capability_dictionary
-- Version: 0.2.0
+- Version: 0.3.0
 - Date: 2026-07-11
 - Spec: skills/voiceattack-decoder/docs/VAP_Format_Specification.md v0.3
 - Purpose: Single machine-readable statement of everything the VAP decoder understands. Contract for decoder V2 output and the encoder module's input. All key/mouse/action names in both tools derive from this file; nothing is hand-maintained twice.
@@ -30,8 +30,8 @@ GENERATED from vap_capability_dictionary.json v0.2.0 — do not hand-edit; regen
 | 16 | ExecuteCommand | ExecuteCommand | solid | warn | Binary code CSV-confirmed; member layout unmapped; XML name from external reference |
 | 17 | KillCommand | — | solid | warn |  |
 | 18 | SetSmallInt | — | parked | opaque | MOOT in VoiceAttack 2: Small Int merged into Integer (Probe B, user-confirmed in-profile). Building 'Set Small Int' in VA2 serializes as ActionType 37 (SetInteger) mode 0, not this code. Code 18 retained legacy/decode-only for pre-VA2 profiles; its own layout cannot be re-sampled from a VA2 build and stays unmapped. |
-| 19 | BeginCondition | — | solid | canonical | Compare gate: m[2] in {19,63,30}. Compound (multi-sub-condition) blocks are decode-only: emit first sub-compare + explicit compound marker |
-| 20 | EndCondition | — | solid | canonical |  |
+| 19 | BeginCondition | ConditionStart | solid | canonical | Compare gate: m[2] in {19,63,30}. Compound (multi-sub-condition) blocks are decode-only: emit first sub-compare + explicit compound marker. XML ActionType name verified against real VoiceAttack XML exports (mandiant/IDA_Pro_VoiceAttack_profile, Penecruz/VAICOM-Community; 2026-07-11). |
+| 20 | EndCondition | ConditionEnd | solid | canonical | XML ActionType name verified against real VoiceAttack XML exports (mandiant/IDA_Pro_VoiceAttack_profile, Penecruz/VAICOM-Community; 2026-07-11). |
 | 21 | SetText | — | solid | warn |  |
 | 22 | ExecuteExternalPlugin | — | solid | warn |  |
 | 23 | Write | — | solid | warn | Write-to-log/screen; distinct from Say (13). Text field reconfirmed by Probe B ('write-marker'); color/shape UI parameters found in no nonzero slot with one default-value sample - parked, see VAP_Parked_Uncertainties.md item 6. |
@@ -39,7 +39,7 @@ GENERATED from vap_capability_dictionary.json v0.2.0 — do not hand-edit; regen
 | 25 | DictationMode | — | solid | warn | Start Dictation Mode. Promoted solid by Probe B (self-labeling command-phrase build). |
 | 26 | StopDictation | — | solid | warn | Stop Dictation Mode. Promoted solid by Probe B. |
 | 27 | ClearDictationBuffer | — | solid | warn | Promoted solid by Probe B. |
-| 29 | Else | — | solid | canonical |  |
+| 29 | Else | ConditionElse | solid | canonical | XML ActionType name verified against real VoiceAttack XML exports (mandiant/IDA_Pro_VoiceAttack_profile, Penecruz/VAICOM-Community; 2026-07-11). |
 | 30 | BeginLoopWhile | — | solid | canonical |  |
 | 31 | EndLoop | — | solid | canonical |  |
 | 32 | Marker | — | solid | warn |  |
@@ -52,7 +52,7 @@ GENERATED from vap_capability_dictionary.json v0.2.0 — do not hand-edit; regen
 | 50 | StartListening | — | solid | warn | Start VoiceAttack Listening. Closed by Probe B; no fields observed beyond the shared envelope - layout is empty, not unknown. |
 | 51 | StopListening | — | solid | warn | Stop VoiceAttack Listening. Closed by Probe B; no fields observed beyond the shared envelope - layout is empty, not unknown. |
 | 62 | PauseVariable | — | solid | warn | Pause a variable number of seconds; distinct from fixed Pause (2) |
-| 63 | ElseIf | — | solid | canonical |  |
+| 63 | ElseIf | ConditionElseIf | solid | canonical | XML ActionType name verified against real VoiceAttack XML exports (mandiant/IDA_Pro_VoiceAttack_profile, Penecruz/VAICOM-Community; 2026-07-11). |
 | 64 | ExitCommand | — | solid | warn |  |
 | 67 | KeyToggle | KeyToggle | solid | canonical |  |
 

@@ -299,6 +299,256 @@ class KeyDurationParityTest(unittest.TestCase):
         self.assertEqual(mismatches, 0, "key/duration disagreements: %s" % bad[:5])
 
 
+XML_CONDITIONAL_FIXTURE = """<?xml version="1.0" encoding="utf-8"?>
+<Profile xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Id>d38fb3f1-b55c-4d76-957e-fd0addd3f7b8</Id>
+  <Name>XML Conditional Fixture</Name>
+  <Commands>
+    <Command>
+      <Id>7e38f126-2a11-4418-b0e3-1e064917e1d6</Id>
+      <CommandString>zoom [out; in]</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Ordinal>0</Ordinal>
+          <IndentLevel>0</IndentLevel>
+          <ActionType>ConditionStart</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context2 xml:space="preserve">out</Context2>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>1</Z>
+          <ConditionPairing>2</ConditionPairing>
+          <ConditionGroup>1</ConditionGroup>
+          <ConditionStartNameFrom>{LASTSPOKENCMD}</ConditionStartNameFrom>
+          <ConditionStartOperator>4</ConditionStartOperator>
+          <ConditionStartValue>0</ConditionStartValue>
+          <ConditionStartValueType>0</ConditionStartValueType>
+          <ConditionStartCompareToCondtion />
+          <ConditionStartType>1</ConditionStartType>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>1</Ordinal>
+          <IndentLevel>1</IndentLevel>
+          <ActionType>PressKey</ActionType>
+          <Duration>1.5</Duration>
+          <Delay>0</Delay>
+          <KeyCodes>
+            <unsignedShort>70</unsignedShort>
+          </KeyCodes>
+          <Context />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>2</Ordinal>
+          <IndentLevel>0</IndentLevel>
+          <ActionType>ConditionElseIf</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context2 xml:space="preserve">in</Context2>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>1</Z>
+          <ConditionPairing>4</ConditionPairing>
+          <ConditionGroup>1</ConditionGroup>
+          <ConditionStartNameFrom>{LASTSPOKENCMD}</ConditionStartNameFrom>
+          <ConditionStartOperator>4</ConditionStartOperator>
+          <ConditionStartValue>0</ConditionStartValue>
+          <ConditionStartValueType>0</ConditionStartValueType>
+          <ConditionStartCompareToCondtion />
+          <ConditionStartType>1</ConditionStartType>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>3</Ordinal>
+          <IndentLevel>1</IndentLevel>
+          <ActionType>PressKey</ActionType>
+          <Duration>1.5</Duration>
+          <Delay>0</Delay>
+          <KeyCodes>
+            <unsignedShort>82</unsignedShort>
+          </KeyCodes>
+          <Context />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>4</Ordinal>
+          <IndentLevel>0</IndentLevel>
+          <ActionType>ConditionEnd</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>1</ConditionGroup>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+  </Commands>
+</Profile>
+"""
+
+
+class XmlConditionalFixtureTest(unittest.TestCase):
+    """Ground-truth-shaped inline XML: Text 'Ends With' Begin/ElseIf/End block (build spec
+    WP-B #3). Exercises the XML-input rebind: ConditionStartType is the type carrier (not
+    ConditionStartValueType, vestigial); ConditionStartValue is the SmallInt/Bool right value
+    (not leftOperand); operator/valueType are integer codes resolved to names via the
+    dictionary, not read as literal name text; codes 19/63/29/20 resolve via xml_action_type."""
+
+    def setUp(self):
+        self.prof = vap2.decode_bytes(XML_CONDITIONAL_FIXTURE.encode("utf-8"), DICT)
+        self.actions = self.prof["commands"][0]["actions"]
+
+    def test_action_type_codes_resolve(self):
+        codes = [a["actionType"]["code"] for a in self.actions]
+        self.assertEqual(codes, [19, 0, 63, 0, 20])
+        names = [a["actionType"]["name"] for a in self.actions]
+        self.assertEqual(names, ["BeginCondition", "PressKey", "ElseIf", "PressKey", "EndCondition"])
+
+    def test_derived_indent(self):
+        self.assertEqual([a["indentLevel"] for a in self.actions], [0, 1, 0, 1, 0])
+
+    def test_begin_condition_fields(self):
+        cond = self.actions[0]["condition"]
+        self.assertEqual(cond["valueType"], {"code": 1, "name": "Text"})
+        self.assertEqual(cond["operator"], {"code": 4, "name": "Ends With"})
+        self.assertEqual(cond["leftOperand"], "{LASTSPOKENCMD}")
+        self.assertEqual(cond["value"], "out")
+        self.assertEqual(cond["pairing"], 2)
+        self.assertEqual(cond["blockOrdinal"], 1)
+
+    def test_elseif_condition_fields(self):
+        cond = self.actions[2]["condition"]
+        self.assertEqual(cond["valueType"], {"code": 1, "name": "Text"})
+        self.assertEqual(cond["operator"], {"code": 4, "name": "Ends With"})
+        self.assertEqual(cond["leftOperand"], "{LASTSPOKENCMD}")
+        self.assertEqual(cond["value"], "in")
+        self.assertEqual(cond["pairing"], 4)
+        self.assertEqual(cond["blockOrdinal"], 1)
+
+    def test_body_and_end_carry_no_condition(self):
+        # Body actions: neither key. End: no condition, but the binary path's block record.
+        self.assertNotIn("condition", self.actions[1])
+        self.assertNotIn("condition", self.actions[3])
+        self.assertNotIn("condition", self.actions[4])
+        self.assertNotIn("block", self.actions[1])
+        self.assertNotIn("block", self.actions[3])
+        self.assertEqual(self.actions[4]["block"], {"pairing": 0})
+
+
+# Else branch + valueless operator + present-but-empty Context2, per ground-truth sample 2d
+# (Else carries no ConditionStartNameFrom) and the binary path's valueless-value suppression.
+XML_ELSE_FIXTURE = """<?xml version="1.0" encoding="utf-8"?>
+<Profile xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Id>b8e1c2d3-0000-4000-8000-000000000001</Id>
+  <Name>XML Else Fixture</Name>
+  <Commands>
+    <Command>
+      <Id>b8e1c2d3-0000-4000-8000-000000000002</Id>
+      <CommandString>branch test</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Ordinal>0</Ordinal>
+          <ActionType>ConditionStart</ActionType>
+          <Duration>0</Duration>
+          <KeyCodes />
+          <Z>1</Z>
+          <ConditionPairing>1</ConditionPairing>
+          <ConditionGroup>1</ConditionGroup>
+          <ConditionStartNameFrom>{TXT:probe}</ConditionStartNameFrom>
+          <ConditionStartOperator>8</ConditionStartOperator>
+          <ConditionStartValue>0</ConditionStartValue>
+          <ConditionStartValueType>0</ConditionStartValueType>
+          <ConditionStartCompareToCondtion />
+          <ConditionStartType>1</ConditionStartType>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>1</Ordinal>
+          <ActionType>ConditionElseIf</ActionType>
+          <Duration>0</Duration>
+          <KeyCodes />
+          <Context2 xml:space="preserve"></Context2>
+          <Z>1</Z>
+          <ConditionPairing>2</ConditionPairing>
+          <ConditionGroup>1</ConditionGroup>
+          <ConditionStartNameFrom>{TXT:probe}</ConditionStartNameFrom>
+          <ConditionStartOperator>0</ConditionStartOperator>
+          <ConditionStartValue>0</ConditionStartValue>
+          <ConditionStartValueType>0</ConditionStartValueType>
+          <ConditionStartCompareToCondtion />
+          <ConditionStartType>1</ConditionStartType>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>2</Ordinal>
+          <ActionType>ConditionElse</ActionType>
+          <Duration>0</Duration>
+          <KeyCodes />
+          <Z>0</Z>
+          <ConditionPairing>3</ConditionPairing>
+          <ConditionGroup>1</ConditionGroup>
+          <ConditionStartOperator>0</ConditionStartOperator>
+          <ConditionStartValue>0</ConditionStartValue>
+          <ConditionStartValueType>0</ConditionStartValueType>
+          <ConditionStartType>0</ConditionStartType>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>3</Ordinal>
+          <ActionType>ConditionEnd</ActionType>
+          <Duration>0</Duration>
+          <KeyCodes />
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>1</ConditionGroup>
+          <ConditionStartOperator>0</ConditionStartOperator>
+          <ConditionStartValue>0</ConditionStartValue>
+          <ConditionStartValueType>0</ConditionStartValueType>
+          <ConditionStartType>0</ConditionStartType>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+  </Commands>
+</Profile>
+"""
+
+
+class XmlElseAndValuelessTest(unittest.TestCase):
+    """Shape parity with the binary path on the three verification findings: Else/End carry
+    the block record {pairing}, present-but-empty Context2 binds as "" not None, and
+    valueless Text operators (Has Been Set) omit the value key entirely."""
+
+    def setUp(self):
+        self.prof = vap2.decode_bytes(XML_ELSE_FIXTURE.encode("utf-8"), DICT)
+        self.actions = self.prof["commands"][0]["actions"]
+
+    def test_valueless_operator_omits_value_key(self):
+        cond = self.actions[0]["condition"]
+        self.assertEqual(cond["operator"], {"code": 8, "name": "Has Been Set"})
+        self.assertNotIn("value", cond)
+
+    def test_empty_string_value_binds_as_empty_not_none(self):
+        cond = self.actions[1]["condition"]
+        self.assertEqual(cond["operator"], {"code": 0, "name": "Equals"})
+        self.assertEqual(cond["value"], "")
+
+    def test_else_and_end_carry_block_record(self):
+        self.assertEqual(self.actions[2]["block"], {"pairing": 3})
+        self.assertEqual(self.actions[3]["block"], {"pairing": 0})
+        self.assertNotIn("condition", self.actions[2])
+        self.assertNotIn("condition", self.actions[3])
+
+
 class FixpointStubTest(unittest.TestCase):
     """decode(encode(decode(x))) == decode(x) — the encoder's definition of done
     (round-trip contract). The encoder is out of V2 scope (plan §9); this stub documents

@@ -89,19 +89,55 @@ def _parse_action(act_el, index, dictionary):
     if keycodes:
         base["keyCodes"] = keycodes
 
-    # Conditions are fields on the action (spec sec 5) — present as Condition* elements.
-    op = _local_text(act_el, "ConditionStartOperator")
-    vtype = _local_text(act_el, "ConditionStartValueType")
-    if op or vtype:
-        base["condition"] = {
-            "valueType": {"name": vtype},
-            "operator": {"name": op},
-            "leftOperand": _local_text(act_el, "ConditionStartValue"),
-            "pairing": _local_int(act_el, "ConditionPairing"),
-            "ordinal": _local_int(act_el, "Ordinal"),
-            "indentLevelStored": _local_int(act_el, "IndentLevel"),
-        }
+    # Conditions are fields on the action (spec sec 5), carried on Begin/ElseIf (codes
+    # 19/63) only — Else/End (29/20) are block-structure markers with no compare (ground
+    # -truth samples 2d/2e: no ConditionStartNameFrom element at all on those two types).
+    # Both records mirror the binary path's shape exactly (actions.py / conditions.py).
+    if code in (19, 63):
+        base["condition"] = _parse_condition(act_el, dictionary)
+    if code in conditions.BLOCK_STRUCTURE_TYPES:
+        base["block"] = {"pairing": _local_int(act_el, "ConditionPairing")}
     return base
+
+
+def _parse_condition(act_el, dictionary):
+    """Bind the same shape the binary path emits (conditions.decode_compare): valueType
+    /operator as {code, name} pairs resolved through the dictionary, leftOperand/value
+    split by value type, value key OMITTED for valueless operators (gated by the operator,
+    matching the binary path). ConditionStartType is the real type carrier —
+    ConditionStartValueType is vestigial (always 0 in real exports); ConditionStartValue is
+    the SmallInt/Bool right-hand value, never the left operand (ConditionStartNameFrom)."""
+    vtype_code = _local_int(act_el, "ConditionStartType")
+    vtype_name = dictionary.value_type(vtype_code) if vtype_code is not None else None
+    op_code = _local_int(act_el, "ConditionStartOperator")
+    op_name = dictionary.operator(vtype_name, op_code) if (vtype_name and op_code is not None) else None
+
+    rec = {
+        "valueType": {"code": vtype_code, "name": vtype_name},
+        "operator": {"code": op_code, "name": op_name},
+        "leftOperand": _local_text(act_el, "ConditionStartNameFrom"),
+        "pairing": _local_int(act_el, "ConditionPairing"),
+        "blockOrdinal": _local_int(act_el, "ConditionGroup"),
+    }
+    if op_name is not None and dictionary.operator_is_valueless(op_name):
+        return rec  # Has/Has-Not-Been-Set: no value key (spec sec 8.3), by operator not slot
+
+    if vtype_name == "Text":
+        # Present-but-empty Context2 round-trips as "", never None.
+        rec["value"] = _local_text_or_empty(act_el, "Context2")
+    else:
+        # SmallInteger/Boolean carrier (spec addendum; Integer/Decimal XML carriers unverified).
+        raw = _local_text_or_empty(act_el, "ConditionStartValue")
+        value = None
+        if raw:
+            try:
+                value = int(raw)
+            except ValueError:
+                value = None
+        if vtype_name == "Boolean" and value is not None:
+            value = bool(value == 1)  # True=1, matches conditions.py's binary-path read
+        rec["value"] = value
+    return rec
 
 
 def _parse_keycodes(act_el, dictionary):
@@ -147,6 +183,16 @@ def _iter_local(parent, name):
 def _local_text(parent, name):
     el = _find_local(parent, name)
     return el.text if (el is not None and el.text is not None) else None
+
+
+def _local_text_or_empty(parent, name):
+    """Present-vs-absent text: an element that EXISTS with empty text (ElementTree .text
+    is None) returns "", a missing element returns None. Condition-value binding only —
+    other fields depend on _local_text's absent-on-empty behavior."""
+    el = _find_local(parent, name)
+    if el is None:
+        return None
+    return el.text if el.text is not None else ""
 
 
 def _local_int(parent, name):
