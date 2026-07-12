@@ -273,6 +273,8 @@ class KeyDurationParityTest(unittest.TestCase):
                       for a in cmd["actions"] if a.get("type") == "keypress")
 
     def test_key_duration_parity(self):
+        if not any(have(f) for f in CENSUS):
+            self.skipTest("no local reference profiles — parity needs at least one")
         v1 = self._v1()
         compared = mismatches = 0
         bad = []
@@ -638,18 +640,6 @@ class XmlSetWriteTest(unittest.TestCase):
         self.assertEqual(a["actionType"], {"code": 38, "name": "SetDecimal"})
         self.assertEqual(a["targetVariable"], "bbq")
         self.assertEqual(a["value"], "2.25")
-
-
-class FixpointStubTest(unittest.TestCase):
-    """decode(encode(decode(x))) == decode(x) — the encoder's definition of done
-    (round-trip contract). The encoder is out of V2 scope (plan §9); this stub documents
-    the gate and activates when an encoder module appears."""
-
-    def test_fixpoint_placeholder(self):
-        try:
-            import vap2.encoder  # noqa: F401
-        except Exception:
-            self.skipTest("encoder not yet built (plan §9 mirror refactor) — fixpoint deferred")
 
 
 class AuditGateTest(unittest.TestCase):
