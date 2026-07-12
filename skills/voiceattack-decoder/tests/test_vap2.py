@@ -642,6 +642,355 @@ class XmlSetWriteTest(unittest.TestCase):
         self.assertEqual(a["value"], "2.25")
 
 
+# Row-1 payload bindings on the XML path (build spec WP-B / plan W2.5): Say volume/rate,
+# MouseAction context-gated fields, Pause duration, Launch Context/Context2/Context3, and
+# the presence rules the binary path enforces (duration key per family, keyCodes always on
+# key actions, truthiness gates on clickDuration/scroll_clicks). Carriers per dictionary
+# 0.4.1 xml notes and the generator's ground-truth templates.
+XML_ROW1_PAYLOAD_FIXTURE = """<?xml version="1.0" encoding="utf-8"?>
+<Profile xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Id>a1b2c3d4-0000-4000-8000-000000000001</Id>
+  <Name>XML Row1 Payload Fixture</Name>
+  <Commands>
+    <Command>
+      <Id>a1b2c3d4-0000-4000-8000-000000000002</Id>
+      <CommandString>row one sweep</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Ordinal>0</Ordinal>
+          <ActionType>Say</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>say-marker</Context>
+          <X>43</X>
+          <Y>7</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>1</Ordinal>
+          <ActionType>MouseAction</ActionType>
+          <Duration>0.1</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>LC</Context>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>2</Ordinal>
+          <ActionType>MouseAction</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>RC</Context>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>3</Ordinal>
+          <ActionType>MouseAction</ActionType>
+          <Duration>5</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>SF</Context>
+          <X>5</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>4</Ordinal>
+          <ActionType>MouseAction</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>Move</Context>
+          <X>333</X>
+          <Y>444</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>5</Ordinal>
+          <ActionType>Pause</ActionType>
+          <Duration>1.125</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>6</Ordinal>
+          <ActionType>Pause</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>7</Ordinal>
+          <ActionType>Launch</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>C:\\probe\\launch-test.exe</Context>
+          <Context2>--a1 --a2</Context2>
+          <Context3>C:\\probe\\wd</Context3>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>8</Ordinal>
+          <ActionType>Launch</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>C:\\probe\\bare.exe</Context>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>9</Ordinal>
+          <ActionType>KeyDown</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes>
+            <unsignedShort>162</unsignedShort>
+          </KeyCodes>
+          <Context />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>10</Ordinal>
+          <ActionType>PressKey</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes>
+            <unsignedShort>67</unsignedShort>
+          </KeyCodes>
+          <Context />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>11</Ordinal>
+          <ActionType>WriteToLog</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>log line</Context>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+  </Commands>
+</Profile>
+"""
+
+
+class XmlRow1PayloadTest(unittest.TestCase):
+    """W2.5 parity closeout: every new XML binding carries the binary path's exact record
+    keys, value types, and presence rules (actions.py is the contract)."""
+
+    def setUp(self):
+        self.prof = vap2.decode_bytes(XML_ROW1_PAYLOAD_FIXTURE.encode("utf-8"), DICT)
+        self.actions = self.prof["commands"][0]["actions"]
+
+    def test_say_bindings(self):
+        a = self.actions[0]
+        self.assertEqual(a["actionType"], {"code": 13, "name": "Say"})
+        self.assertEqual(a["text"], "say-marker")
+        self.assertEqual(a["volume"], 43)
+        self.assertEqual(a["rate"], 7)
+        # Binary _say assigns all five keys unconditionally; XML has no voice carrier.
+        self.assertIn("voiceGuid", a)
+        self.assertIn("voiceName", a)
+        self.assertIsNone(a["voiceGuid"])
+        self.assertIsNone(a["voiceName"])
+        self.assertNotIn("context", a)
+        self.assertNotIn("duration", a)
+
+    def test_mouse_click_duration(self):
+        a = self.actions[1]
+        self.assertEqual(a["contextCode"], "LC")
+        self.assertEqual(a["action"], "left_click")
+        self.assertEqual(a["clickDuration"], 0.1)
+        self.assertNotIn("scroll_clicks", a)
+        self.assertNotIn("duration", a)
+        self.assertNotIn("context", a)
+
+    def test_mouse_zero_duration_omits_key(self):
+        # Binary _mouse gates clickDuration on truthiness — 0.0 emits no key.
+        a = self.actions[2]
+        self.assertEqual(a["contextCode"], "RC")
+        self.assertNotIn("clickDuration", a)
+        self.assertNotIn("scroll_clicks", a)
+        self.assertNotIn("duration", a)
+
+    def test_mouse_scroll_clicks(self):
+        a = self.actions[3]
+        self.assertEqual(a["contextCode"], "SF")
+        self.assertEqual(a["action"], "scroll_up")
+        self.assertEqual(a["scroll_clicks"], 5.0)
+        self.assertNotIn("clickDuration", a)
+        self.assertNotIn("duration", a)
+
+    def test_mouse_move_xy(self):
+        a = self.actions[4]
+        self.assertEqual(a["contextCode"], "Move")
+        self.assertEqual(a["action"], "cursor_move")
+        self.assertEqual((a["x"], a["y"]), (333, 444))
+        self.assertNotIn("clickDuration", a)
+        self.assertNotIn("scroll_clicks", a)
+
+    def test_pause_duration(self):
+        a = self.actions[5]
+        self.assertEqual(a["actionType"], {"code": 2, "name": "Pause"})
+        self.assertEqual(a["duration"], 1.125)
+        self.assertNotIn("context", a)
+
+    def test_pause_zero_duration_key_present(self):
+        # Binary _pause: `_opt_double or 0.0` — the key is ALWAYS present on Pause.
+        a = self.actions[6]
+        self.assertEqual(a["duration"], 0.0)
+
+    def test_launch_bindings(self):
+        a = self.actions[7]
+        self.assertEqual(a["actionType"], {"code": 3, "name": "Launch"})
+        self.assertEqual(a["executablePath"], "C:\\probe\\launch-test.exe")
+        self.assertEqual(a["arguments"], "--a1 --a2")
+        self.assertEqual(a["workingDirectory"], "C:\\probe\\wd")
+        self.assertNotIn("context", a)
+        self.assertNotIn("duration", a)
+
+    def test_launch_absent_fields_omitted(self):
+        # Binary SIMPLE_STRING_FIELDS binds only present slots — missing Context2/3
+        # elements must omit the keys, not bind None.
+        a = self.actions[8]
+        self.assertEqual(a["executablePath"], "C:\\probe\\bare.exe")
+        self.assertNotIn("arguments", a)
+        self.assertNotIn("workingDirectory", a)
+
+    def test_keydown_has_no_duration_key(self):
+        # Binary _keys_no_duration: KeyDown/Up/Toggle records never carry duration.
+        a = self.actions[9]
+        self.assertEqual(a["actionType"], {"code": 8, "name": "KeyDown"})
+        self.assertEqual(a["keyCodes"], [{"vk": 162, "name": "lctrl"}])
+        self.assertNotIn("duration", a)
+
+    def test_presskey_zero_duration_key_present(self):
+        # Binary _keys: duration ALWAYS present on PressKey, 0.0 included.
+        a = self.actions[10]
+        self.assertEqual(a["duration"], 0.0)
+        self.assertEqual(a["keyCodes"], [{"vk": 67, "name": "c"}])
+
+    def test_writetolog_has_no_duration_key(self):
+        a = self.actions[11]
+        self.assertEqual(a["text"], "log line")
+        self.assertNotIn("duration", a)
+
+
+class Cs2BinaryXmlParityTest(unittest.TestCase):
+    """W2.5 gate: binary decode of the CS2 reference profile vs XML decode of the profile
+    the CURRENT generator emits from cities_skylines_2_conditional.json — field-identical
+    action records for every row-1 type present, matched per command phrase. GUIDs and
+    profile/command-level metadata (offsets, category provenance) are excluded; the action
+    record is the contract."""
+
+    BINARY = "Cities Skylines II-Profile.vap"
+    SOURCE_JSON = os.path.join(ROOT, "cities_skylines_2_conditional.json")
+    GENERATOR = os.path.join(ROOT, "skills", "voiceattack-generator", "scripts",
+                             "vap_generator.py")
+
+    # Provenance keys, per source: binary carries offset/head/guid + a confidence tag,
+    # XML carries source. Neither is action payload.
+    _STRIP = {"offset", "head", "guid", "source"}
+
+    @classmethod
+    def _normalize(cls, action):
+        out = {k: v for k, v in action.items() if k not in cls._STRIP}
+        at = dict(out["actionType"])
+        at.pop("confidence", None)
+        out["actionType"] = at
+        return out
+
+    def test_row1_field_parity(self):
+        require(self.BINARY)
+        if not (os.path.exists(self.SOURCE_JSON) and os.path.exists(self.GENERATOR)):
+            self.skipTest("generator or cities_skylines_2_conditional.json missing")
+        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            out_vap = os.path.join(tmp, "cs2_generated.vap")
+            proc = subprocess.run(
+                [sys.executable, self.GENERATOR, self.SOURCE_JSON, out_vap],
+                capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr or proc.stdout)
+            xml_prof = vap2.decode_file(out_vap, DICT)
+        bin_prof = decode(self.BINARY)
+
+        bin_cmds = {c["phrase"]: c for c in bin_prof["commands"]}
+        xml_cmds = {c["phrase"]: c for c in xml_prof["commands"]}
+        common = sorted(set(bin_cmds) & set(xml_cmds))
+        self.assertGreater(len(common), 0, "no phrase-matched commands — pair broken")
+
+        covered = {}
+        mismatches = []
+        for phrase in common:
+            b_acts = [self._normalize(a) for a in bin_cmds[phrase]["actions"]]
+            x_acts = [self._normalize(a) for a in xml_cmds[phrase]["actions"]]
+            self.assertEqual(len(b_acts), len(x_acts), "action count differs on %r" % phrase)
+            for b, x in zip(b_acts, x_acts):
+                name = b["actionType"]["name"]
+                covered[name] = covered.get(name, 0) + 1
+                if b != x:
+                    mismatches.append((phrase, b["index"], name, b, x))
+        sys.stderr.write(
+            "\n[CS2 binary-vs-XML parity] commands=%d actions-per-type=%s mismatches=%d\n"
+            % (len(common), sorted(covered.items()), len(mismatches)))
+        self.assertEqual(mismatches, [], "field mismatches: %s" % mismatches[:3])
+        # The pair must actually exercise the conditional row-1 core, or the gate is hollow.
+        for must in ("PressKey", "BeginCondition", "ElseIf", "EndCondition"):
+            self.assertIn(must, covered, "CS2 pair no longer exercises %s" % must)
+
+
 class AuditGateTest(unittest.TestCase):
     """Round-trip contract: dictionary_tools audit must report zero orphans against V2."""
 
