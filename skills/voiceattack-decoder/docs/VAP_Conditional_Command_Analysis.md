@@ -1,5 +1,7 @@
 # VAP Conditional (Variable) Command Structure — Analysis
 
+> **HISTORY DOCUMENT (2026-07-09).** Session-by-session research log, superseded by `VAP_Format_Specification.md` v0.2 (authoritative). Earlier sections record claims that later sections refute — read chronologically or not at all. Known residual contradictions are annotated in place below.
+
 Reverse-engineering notes for the **if/else + `{LASTSPOKENCMD}`** command in
 `reference profiles/zoom-if-else.vap`. This is the "second failure" parked by the
 category-whitelist fix: even once the command is *detected*, its conditional actions
@@ -233,6 +235,9 @@ Ground truth this round: `reference profiles/corinthian-4-Profile.{vap,csv}` (bo
 - **KeyDown/KeyUp records share the PressKey marker (fix-verification finding, 2026-07-07).** "Press down X key" / "Release X key" actions match the same `00 00 00 00 01 00 00 00` marker as PressKey, with the Duration slot **exactly 0.0** (all-zero bytes) instead of a hold time — so the `01` either covers all three key actions or is not the ActionType field. Down vs up vs toggle is not distinguishable from the flat record; needs the object walk. (This is why the decoder's phantom filter accepts d==0.0 with a suffix check rather than requiring a positive duration.)
 
 ### Still open (needs the action-graph walk — a research investment)
+
+(Annotation 2026-07-09: this section is fully superseded — every item below closed. The walk was run (1,603 objects); all operator enums are in spec §8.2 — and "Contains=1" in the first bullet was itself refuted, Contains=6. See the session updates below and spec v0.2.)
+
 - Operator codes beyond Contains=1 (Equals, Starts With, Does Not Equal, Is Greater/Less Than, Has Not Been Set, Equals True/False). The cross-operator contrast is ambiguous because the compare value can only be reached reliably by walking the action objects (the var-name anchor hits the pool). 
 - ConditionStartValueType, ConditionPairing/Group, IndentLevel, Begin/ElseIf/Else/End subtype codes.
 - **The unlock:** dereference the shared command-member offsets (`[32,140,156,160]` constant across zoom `[347,…]` and throttle `[331,…]`) to walk actions in order, read each ActionType, match a known sequence (throttle = PressKey, BeginIntegerCompare, SetSmallInt, EndCondition, SetInteger) to fix the BeginCompare ActionType code, then read operator/type/subtype at consistent object-relative member offsets. This finds ALL conditions (inline and by-ref) across every command. Not attempted this round (higher-cost, previously ambiguous) — fund explicitly.
@@ -377,3 +382,5 @@ So Has Not Been Set = 3 (Bool) / 7 (Int, Decimal, Small Int) / 9 (Text) — all 
 **[SOLID] m[2] = ActionType (resolved same day).** m[2] is a per-action-type integer, consistent across jumped / climb / boolean: 0 PressKey · 2 Pause · 16 Execute Command · 17 Kill Command · 19 Begin Condition · 20 End Condition · 23 Write/Say · 29 Else · 30 Begin Loop While · 31 End Loop · 36 Set Boolean · 37 Set Integer · 63 Else If. Codes 19/63/30 carry a compare; no non-compare action reads any of them, so m[2] is the reliable condition detector (m[24] is NOT — it reads 0 for both Small-Integer compares and every non-condition action, filtering nothing). This corrects the earlier reading of "`01 00 00 00` = ActionType 1 = PressKey" above: that `01` is the m[5] keypress marker, and PressKey's ActionType is 0. Enum not exhaustive (Launch/Mouse/SetText etc. unsampled).
 
 **Probe-2 status after this round:** command 2 (value-type field + all five codes) is closed pre-`conditionals2`; command 3's ConditionPairing branch-vs-End model is closed, its IndentLevel is reframed (not a stored member; derivable from pairing + ordinal), and its subtype (m[2]) stays open. Remaining genuinely-open items: whether m[18] is ConditionGroup (needs the compound decode), the subtype code (m[2]), and compound-condition handling in the walker.
+
+(Correction 2026-07-09: the two "m[2] stays open" mentions above are stale — they contradict the [SOLID] resolution two paragraphs up (m[2]=ActionType, Begin/ElseIf/Else/End = 19/63/29/20). m[2] is closed; see spec §9.1. The m[18]-as-ConditionGroup question was subsequently de-scoped to decode-only (Probe A dropped, 2026-07-08), and compound handling is a V2 requirement — spec §8.5/§8.6.)

@@ -9,7 +9,7 @@ VoiceAttack profile tools - accessibility utilities for creating and analyzing V
 1. **Generator**: JSON → VAP (create profiles from simple definitions)
 2. **Decoder**: Binary VAP → XML + JSON (reverse-engineer existing profiles)
 
-**Status:** Complete and tested. Profiles import and work in VoiceAttack.
+**Status:** 2.0.0. Generator emits conditional dispatch blocks (Begin/ElseIf/Else/End, Text compares), SetDecimal variables, and Write log actions — all import-tested in VoiceAttack (2026-07-12, two probes at 100%, including the DecimalSet carrier confirmation via log instrumentation). Decoder V2 (`scripts/vap2/`, stdlib-only object-walk) decodes binary and XML-form profiles into the same normative JSON (schema v1.1, frozen), structured conditionals included; all reference profiles decode with zero chain breaks and zero unknowns; a VoiceAttack re-export of generator output round-tripped byte-equivalent. v1 (`vap_decoder.py`) stays in-tree during soak. Regression harness: 31 tests (`tests/`). Dictionary 0.4.1 (audit exit 0). Next: encoder refactor plan against `docs/V2_JSON_Schema.md`.
 
 ## Commands
 
@@ -17,7 +17,13 @@ VoiceAttack profile tools - accessibility utilities for creating and analyzing V
 # Generate VAP from JSON
 python3 skills/voiceattack-generator/scripts/vap_generator.py input.json output.vap
 
-# Decode binary VAP to XML + JSON (dual output)
+# Decode binary VAP — V2 (object-walk; normative JSON, gated XML with --xml)
+python3 -m vap2 input.vap [output_base] [--stdout] [--xml]   # run from scripts/ dir
+# V2 regression harness + soak sign-off
+python3 -m unittest discover -s skills/voiceattack-decoder/tests
+python3 skills/voiceattack-decoder/tests/soak.py
+
+# Decode binary VAP — v1 (legacy, in-tree during soak): XML + JSON dual output
 python3 skills/voiceattack-decoder/scripts/vap_decoder.py input.vap [output_base]
 # Produces: output_base.xml and output_base.json (or input_decoded.* if no output specified)
 
@@ -33,7 +39,7 @@ python3 -c "import zlib; d=zlib.decompress(open('file.vap','rb').read(),-15); pr
 - `.vap` files: either deflate-compressed binary OR uncompressed XML
 - VoiceAttack accepts raw XML directly (no compression needed)
 - Binary compression: `zlib.decompress(data, -15)` (raw deflate)
-- See `skills/voiceattack-decoder/docs/VAP_FORMAT.md` for binary structure details
+- See `skills/voiceattack-decoder/docs/VAP_Format_Specification.md` (v0.2, authoritative) for binary structure details
 
 ## XML Profile Structure
 
@@ -113,7 +119,7 @@ Separator: 108  Subtract: 109  Decimal: 110  Divide: 111
 - `skills/voiceattack-generator/scripts/vap_generator.py` - Generator script
 - `skills/voiceattack-generator/SKILL.md` - Skill instructions (includes screenshot workflow)
 - `skills/voiceattack-decoder/scripts/vap_decoder.py` - Decoder script
-- `skills/voiceattack-decoder/docs/VAP_FORMAT.md` - Binary format documentation
+- `skills/voiceattack-decoder/docs/VAP_Format_Specification.md` - Binary format specification (v0.2, authoritative)
 
 ## Directory Structure
 
@@ -160,6 +166,30 @@ Use `{"_section": "..."}` entries to organize JSON - they're ignored by generato
 | MouseAction | action (see mouse actions below), scroll_clicks (for scroll actions) |
 | Pause | duration |
 | Say | text, volume (0-100), rate |
+| SetDecimal | variable, value (number) - sets a decimal variable; XML carrier inferred pending VoiceAttack import probe |
+| Write | text - writes to the VoiceAttack event LOG, not keystrokes; variable tokens like {DEC:var} work |
+| BeginCondition | condition (required) - opens an if block |
+| ElseIf | condition (required) - else-if branch |
+| Else | (no parameters) - else branch |
+| EndCondition | (no parameters) - closes the block |
+
+### Condition Blocks
+
+Interleave condition actions with ordinary actions to branch inside a command. `BeginCondition`/`ElseIf` require a `condition` object: `{"valueType": "Text", "operator": "<name>", "leftOperand": "<string>", "value": "<string>"}`. Text operators: Equals, Does Not Equal, Starts With, Does Not Start With, Ends With, Does Not End With, Contains, Does Not Contain, Has Been Set, Has Not Been Set. Nesting and `Else` are supported.
+
+```json
+{"trigger": "zoom [out; in]", "actions": [
+  {"type": "BeginCondition", "condition": {"valueType": "Text", "operator": "Ends With", "leftOperand": "{LASTSPOKENCMD}", "value": "out"}},
+  {"type": "PressKey", "keys": ["f"], "duration": 1.5},
+  {"type": "ElseIf", "condition": {"valueType": "Text", "operator": "Ends With", "leftOperand": "{LASTSPOKENCMD}", "value": "in"}},
+  {"type": "PressKey", "keys": ["r"], "duration": 1.5},
+  {"type": "EndCondition"}
+]}
+```
+
+**Scope:** `valueType` must be `"Text"` - other value types (SmallInteger/Boolean/Integer/Decimal) are rejected because their XML carriers are unverified.
+
+**Validation:** unlike other generator defects (warn-and-drop), any malformed condition structure aborts generation with exit 1 and no output file - a dropped condition action would corrupt the block's pairing indexes and produce an importable-but-broken profile. Malformed `SetDecimal` (missing/empty `variable`, non-numeric `value`) and `Write` (missing/non-string `text`) hard-fail the same way.
 
 ### Key Names
 

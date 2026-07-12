@@ -38,6 +38,9 @@ for finer control, you can create your own JSON or ask Claude to give you the JS
 
 2. Generate the VoiceAttack profile:
 
+```bash
+python3 skills/voiceattack-generator/scripts/vap_generator.py my_profile.json output.vap
+```
 
 3. Import `output.vap` into VoiceAttack
 
@@ -106,17 +109,21 @@ Modifiers: shift, ctrl, alt, win
 
 ## Decoder Tool (Standalone)
 
-The repo also includes a decoder for inspecting existing `.vap` files. This is a standalone command-line tool, not part of the Claude plugin. 
+The repo also includes a decoder for inspecting existing `.vap` files. This is a standalone command-line tool, not part of the Claude plugin.
+
+**V2** (`vap2`) walks the binary object model and emits structured JSON with canonical names
+and explicit typed unknowns (replacing v1's flat pattern scan). Run from the `scripts/` dir:
 
 ```bash
-# Decode binary VAP to XML
-python3 skills/voiceattack-decoder/scripts/vap_decoder.py profile.vap
-
-# Save to file
-python3 skills/voiceattack-decoder/scripts/vap_decoder.py profile.vap output.xml
+cd skills/voiceattack-decoder/scripts
+python3 -m vap2 profile.vap                # writes profile_decoded.json
+python3 -m vap2 profile.vap output_base    # writes output_base.json
+python3 -m vap2 profile.vap --stdout --xml # JSON/gated-XML to stdout
 ```
 
-See `skills/voiceattack-decoder/docs/VAP_FORMAT.md` for binary format documentation.
+The V2 JSON schema is frozen in `docs/V2_JSON_Schema.md`; acceptance results are in
+`docs/V2_Soak_Report.md`. The legacy v1 tool (`vap_decoder.py`) remains available during soak.
+See `docs/VAP_Format_Specification.md` for binary format documentation.
 
 ## VoiceAttack
 

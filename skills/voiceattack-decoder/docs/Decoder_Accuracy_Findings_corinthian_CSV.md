@@ -1,5 +1,7 @@
 # Decoder Accuracy Findings — corinthian CSV Oracle
 
+> **HISTORICAL (2026-07-09).** Findings 1–4 fixed and verified (see Outcome). Line numbers cited below (175/299/351) are pinned to the pre-fix `vap_decoder.py` and have drifted in the current source; refresh is deferred to the V2 freeze (execution plan Phase 6). Finding 5 has since been root-caused: the last command's scan bound runs to end-of-buffer and swallows the profile's trailing category list — it affects the last command of every profile, and is a V2 acceptance criterion, not an anomaly.
+
 First measurement of the decoder against ground truth. VoiceAttack cannot export XML, but its **CSV export** lists every command's category and full action sequence in English. Paired with the binary `.vap`, it is a validation oracle. Source pair (both gitignored, local only): `reference profiles/corinthian-4-Profile.vap` + `reference profiles/corinthian-4-Profile.csv`.
 
 ## Method

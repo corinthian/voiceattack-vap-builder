@@ -1,5 +1,7 @@
 # VoiceAttack .VAP File Format
 
+> **HISTORICAL (2026-07-09).** Superseded by `VAP_Format_Specification.md` (v0.2) — the authoritative spec. This file predates the object-model discovery: it documents the flat-scan view, whose command layout is a proven misread (spec §6.2 correction) and which cannot express member-slot semantics. Do not implement against it. The two known in-body errors (key-action byte layout, scroll-offset table) are corrected in place below; other details may be stale.
+
 Technical documentation for VoiceAttack profile files (.vap).
 
 ## Overview
@@ -83,7 +85,7 @@ Key press actions follow this 56-byte pattern:
 | Offset | Size | Description |
 |--------|------|-------------|
 | 0      | 4    | Zeros (padding) |
-| 4      | 4    | `0x00010000` (action type flag) |
+| 4      | 4    | `0x00000001` — bytes `01 00 00 00` (corrected 2026-07-09: this is the KeyCodes count = 1, the single-key case, NOT an action-type flag; chords read counts 2–3 here — spec §9.2) |
 | 8      | 4    | Virtual Key Code |
 | 12     | 4    | Zeros |
 | 16     | 16   | `0xFFFFFFFF` padding |
@@ -121,6 +123,9 @@ Each command contains:
 4. **Category** (length-prefixed string) - Organizational grouping
 
 ### Known Categories
+
+(Correction 2026-07-09: categories are free-form user strings, not a fixed schema — this list is just examples from one profile. Anchoring detection on these six words was decoder bug 4233a0e.)
+
 - `keyboard` - Key press commands
 - `applications` - App launch commands
 - `Interface` - UI control commands
@@ -129,7 +134,7 @@ Each command contains:
 
 ## Mouse Action Structure
 
-Mouse actions use a context code stored as a length-prefixed string, with scroll clicks stored as a double 24 bytes before the context code.
+Mouse actions use a context code stored as a length-prefixed string, with scroll clicks stored as a double 20 bytes before the context code's length prefix (corrected 2026-07-09 — earlier drafts mixed anchors; see the corrected offset table below).
 
 ### Mouse Action Context Codes
 
@@ -160,13 +165,13 @@ Format: `{button}{action}`
 
 ### Scroll Click Count (Binary)
 
-Scroll clicks are stored as an IEEE 754 double at offset -20 from the context code length prefix:
+Scroll clicks are stored as an IEEE 754 double at offset -20 from the context code length prefix (all offsets below anchored at the length prefix; corrected 2026-07-09 — the old table anchored at the string bytes yet kept prefix-anchored offsets):
 
 ```
 Offset -20: double (scroll clicks)  e.g., 0x4014... = 5.0
 Offset -12: zeros or other data
-Offset -4:  uint32 length prefix (2 for "SF", "SB", etc.)
-Offset 0:   context string bytes
+Offset 0:   uint32 length prefix (2 for "SF", "SB", etc.)
+Offset +4:  context string bytes
 ```
 
 Example hex for 5 scroll clicks: `00 00 00 00 00 00 14 40` (5.0 as IEEE 754 double)
@@ -206,7 +211,7 @@ Offset 0x1238: "[press; hold] alpha"
 ### Sample Key Action
 ```
 00 00 00 00  // padding
-00 00 01 00  // action type (0x00010000)
+01 00 00 00  // KeyCodes count = 1 (corrected 2026-07-09; was misprinted as 00 00 01 00 "action type")
 41 00 00 00  // VK_A (0x41 = 'A')
 00 00 00 00  // padding
 FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF  // padding

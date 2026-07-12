@@ -3,12 +3,15 @@
 VoiceAttack Profile Generator
 Generates valid .vap XML files from simple JSON input.
 
-Supports: PressKey, MouseAction, Pause, KeyDown, KeyUp, KeyToggle, Say
+Supports: PressKey, MouseAction, Pause, KeyDown, KeyUp, KeyToggle, Say,
+SetDecimal, Write (VoiceAttack log), and condition blocks (BeginCondition,
+ElseIf, Else, EndCondition - Text compares only)
 
 Usage: python3 vap_generator.py <input.json> [output.vap]
 """
 
 import json
+import math
 import os
 import sys
 import uuid
@@ -221,20 +224,78 @@ MOUSE_CODES = {
 }
 
 
+# Condition block action types (JSON "type" -> XML ActionType string). Codes 19/63/29/20
+# per schema/vap_capability_dictionary.json 0.2.0 action_types (confirmed against real
+# VoiceAttack XML exports, 2026-07-11 recon).
+CONDITION_ACTION_TYPES = {
+    "BeginCondition": "ConditionStart",
+    "ElseIf": "ConditionElseIf",
+    "Else": "ConditionElse",
+    "EndCondition": "ConditionEnd",
+}
+# Marker kinds that open/continue/close a block, for validation and pairing/group derivation.
+CONDITION_OPEN = "BeginCondition"
+CONDITION_BRANCH = ("ElseIf", "Else")
+CONDITION_CLOSE = "EndCondition"
+
+# Value-type selector codes (ConditionStartType), dictionary 0.2.0 conditions.value_types.
+# v1 only supports Text; the others are listed so an out-of-scope valueType can be named
+# in the error message.
+CONDITION_VALUE_TYPES = {
+    "SmallInteger": 0,
+    "Text": 1,
+    "Boolean": 2,
+    "Integer": 3,
+    "Decimal": 4,
+}
+
+# Text operator dropdown order (0-based index == code), dictionary 0.2.0
+# conditions.operators.Text. Only Text is in v1 scope.
+TEXT_OPERATORS = {
+    "Equals": 0,
+    "Does Not Equal": 1,
+    "Starts With": 2,
+    "Does Not Start With": 3,
+    "Ends With": 4,
+    "Does Not End With": 5,
+    "Contains": 6,
+    "Does Not Contain": 7,
+    "Has Been Set": 8,
+    "Has Not Been Set": 9,
+}
+
+CONDITION_KEYS = {"valueType", "operator", "leftOperand", "value"}
+
+# JSON-level action names whose XML ActionType differs (SetDecimal -> DecimalSet,
+# Write -> WriteToLog). Kept as named constants, not quoted dispatch literals: the
+# dictionary audit reads quoted literals in action_xml's dispatch chain as XML
+# ActionType names.
+SET_DECIMAL_JSON_TYPE = "SetDecimal"
+WRITE_JSON_TYPE = "Write"
+
+
+class ConditionValidationError(Exception):
+    """A command's action list fails hard-fail validation (condition-block structure,
+    SetDecimal/Write shape). Aborts the entire generation run (no output file is
+    written) - dropping one condition action would corrupt every downstream pairing
+    index and produce an importable-but-broken profile."""
+
+
 def new_guid():
     return str(uuid.uuid4())
 
 
 def format_duration(value):
     """Validate a duration and format it as a plain decimal string (never
-    scientific notation). Invalid (non-numeric, zero, or negative) values
-    fall back to 0.1 with a warning."""
+    scientific notation). Invalid (non-numeric or negative) values fall back
+    to 0.1 with a warning. Explicit zero is legal - real VoiceAttack exports
+    carry PressKey Duration 0.0 (reference profile zoom command)."""
     try:
         d = float(value)
     except (TypeError, ValueError):
         warn(f"Invalid duration {value} - using default 0.1")
         return "0.1"
-    if d <= 0:
+    if d < 0:
         warn(f"Invalid duration {value} - using default 0.1")
         return "0.1"
     if isinstance(value, int) and not isinstance(value, bool):
@@ -245,10 +306,16 @@ def format_duration(value):
     return s
 
 
-def action_xml(action, ordinal=0):
+def action_xml(action, ordinal=0, indent_level=0, condition_pairing=0, condition_group=0):
     """Generate XML for a single action. Returns None if the action should
-    be skipped entirely (unknown action type or unknown mouse action)."""
+    be skipped entirely (unknown action type or unknown mouse action).
+
+    Condition markers (BeginCondition/ElseIf/Else/EndCondition) are rendered by a
+    dedicated helper - they never enter the dispatch chain below, so they cannot be
+    dropped by the "unknown action type" fallback."""
     action_type = action.get("type", "PressKey")
+    if action_type in CONDITION_ACTION_TYPES:
+        return _condition_action_xml(action, ordinal, indent_level, condition_pairing, condition_group)
 
     # Common fields
     action_id = new_guid()
@@ -312,6 +379,18 @@ def action_xml(action, ordinal=0):
         x = action.get("volume", 100)
         y = action.get("rate", 0)
 
+    elif action_type == SET_DECIMAL_JSON_TYPE:
+        # Own template: DecimalSet carries ConditionSetName + DecimalContext1 and no
+        # <Context> element (ground truth sec 4.6 ConditionSet analogy).
+        return _decimal_set_xml(action, ordinal, indent_level)
+
+    elif action_type == WRITE_JSON_TYPE:
+        # XML ActionType is WriteToLog (code 23) - writes to the VoiceAttack event log,
+        # not keystrokes. Text in Context, X = color code (mapping unverified - emit 0).
+        # Shape validated in _validate_actions (hard-fail).
+        action_type = "WriteToLog"
+        context = escape(action.get("text", ""))
+
     else:
         warn(f"Unknown action type '{action_type}' - skipped")
         return None
@@ -327,7 +406,7 @@ def action_xml(action, ordinal=0):
           <PairingSetElse>false</PairingSetElse>
           <Ordinal>{ordinal}</Ordinal>
           <ConditionMet xsi:nil="true"/>
-          <IndentLevel>0</IndentLevel>
+          <IndentLevel>{indent_level}</IndentLevel>
           <ConditionSkip>false</ConditionSkip>
           <IsSuffixAction>false</IsSuffixAction>
           <DecimalTransient1>0</DecimalTransient1>
@@ -341,8 +420,8 @@ def action_xml(action, ordinal=0):
           <Y>{y}</Y>
           <Z>{z}</Z>
           <InputMode>0</InputMode>
-          <ConditionPairing>0</ConditionPairing>
-          <ConditionGroup>0</ConditionGroup>
+          <ConditionPairing>{condition_pairing}</ConditionPairing>
+          <ConditionGroup>{condition_group}</ConditionGroup>
           <ConditionStartOperator>0</ConditionStartOperator>
           <ConditionStartValue>0</ConditionStartValue>
           <ConditionStartValueType>0</ConditionStartValueType>
@@ -355,6 +434,238 @@ def action_xml(action, ordinal=0):
           <RandomSounds/>
           <ConditionExpressions/>
         </CommandAction>"""
+
+
+def _condition_action_xml(action, ordinal, indent_level, condition_pairing, condition_group):
+    """Render a BeginCondition/ElseIf/Else/EndCondition marker. Element order and the
+    absence/presence of fields follow the ground-truth XML samples exactly (see
+    conditional_xml_ground_truth.md samples 1, 2c, 2d, 2e) - it is NOT the same template
+    as ordinary actions: no <Context>, a Text compare's value lives in <Context2>, and
+    Begin/ElseIf carry ConditionStartNameFrom + ConditionStartCompareToCondtion that
+    Else/EndCondition omit entirely."""
+    action_type = action["type"]
+    xml_action_type = CONDITION_ACTION_TYPES[action_type]
+    action_id = new_guid()
+
+    if action_type in (CONDITION_OPEN, "ElseIf"):
+        condition = action["condition"]  # presence already validated
+        operator_code = TEXT_OPERATORS[condition["operator"]]
+        left_operand = escape(condition["leftOperand"])
+        value = escape(str(condition["value"]))
+        return f"""        <CommandAction>
+          <PairingSet>false</PairingSet>
+          <PairingSetElse>false</PairingSetElse>
+          <Ordinal>{ordinal}</Ordinal>
+          <ConditionMet xsi:nil="true"/>
+          <IndentLevel>{indent_level}</IndentLevel>
+          <ConditionSkip>false</ConditionSkip>
+          <IsSuffixAction>false</IsSuffixAction>
+          <DecimalTransient1>0</DecimalTransient1>
+          <Id>{action_id}</Id>
+          <ActionType>{xml_action_type}</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes/>
+          <Context2 xml:space="preserve">{value}</Context2>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>1</Z>
+          <InputMode>0</InputMode>
+          <ConditionPairing>{condition_pairing}</ConditionPairing>
+          <ConditionGroup>{condition_group}</ConditionGroup>
+          <ConditionStartNameFrom>{left_operand}</ConditionStartNameFrom>
+          <ConditionStartOperator>{operator_code}</ConditionStartOperator>
+          <ConditionStartValue>0</ConditionStartValue>
+          <ConditionStartValueType>0</ConditionStartValueType>
+          <ConditionStartCompareToCondtion/>
+          <ConditionStartType>1</ConditionStartType>
+          <DecimalContext1>0</DecimalContext1>
+          <DecimalContext2>0</DecimalContext2>
+          <DateContext1>0001-01-01T00:00:00</DateContext1>
+          <DateContext2>0001-01-01T00:00:00</DateContext2>
+          <Disabled>false</Disabled>
+          <RandomSounds/>
+          <ConditionExpressions/>
+        </CommandAction>"""
+
+    # Else / EndCondition: structural only, no compare fields carried.
+    return f"""        <CommandAction>
+          <PairingSet>false</PairingSet>
+          <PairingSetElse>false</PairingSetElse>
+          <Ordinal>{ordinal}</Ordinal>
+          <ConditionMet xsi:nil="true"/>
+          <IndentLevel>{indent_level}</IndentLevel>
+          <ConditionSkip>false</ConditionSkip>
+          <IsSuffixAction>false</IsSuffixAction>
+          <DecimalTransient1>0</DecimalTransient1>
+          <Id>{action_id}</Id>
+          <ActionType>{xml_action_type}</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes/>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>0</InputMode>
+          <ConditionPairing>{condition_pairing}</ConditionPairing>
+          <ConditionGroup>{condition_group}</ConditionGroup>
+          <ConditionStartOperator>0</ConditionStartOperator>
+          <ConditionStartValue>0</ConditionStartValue>
+          <ConditionStartValueType>0</ConditionStartValueType>
+          <ConditionStartType>0</ConditionStartType>
+          <DecimalContext1>0</DecimalContext1>
+          <DecimalContext2>0</DecimalContext2>
+          <DateContext1>0001-01-01T00:00:00</DateContext1>
+          <DateContext2>0001-01-01T00:00:00</DateContext2>
+          <Disabled>false</Disabled>
+          <RandomSounds/>
+          <ConditionExpressions/>
+        </CommandAction>"""
+
+
+def _format_decimal(value):
+    """Format a validated numeric value as plain decimal text (never scientific
+    notation), matching the IntSet sample's plain-literal convention."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    d = float(value)
+    s = repr(d)
+    if "e" in s or "E" in s:
+        s = f"{d:.10f}".rstrip("0").rstrip(".")
+    return s
+
+
+def _decimal_set_xml(action, ordinal, indent_level):
+    """Render a SetDecimal action as XML ActionType DecimalSet. CARRIER INFERRED, not
+    observed - no public XML export contains one (ground truth sec 4.1): target variable
+    in ConditionSetName and value in DecimalContext1 by exact analogy to the SOLID
+    IntSet/ConditionSet samples (secs 4.5/4.6); element order mirrors sec 4.6, the
+    Mandiant-generation serializer this generator's template already follows. Pending
+    the VoiceAttack import probe."""
+    action_id = new_guid()
+    variable = escape(action["variable"])  # shape validated in _validate_actions
+    value = _format_decimal(action["value"])
+    return f"""        <CommandAction>
+          <PairingSet>false</PairingSet>
+          <PairingSetElse>false</PairingSetElse>
+          <Ordinal>{ordinal}</Ordinal>
+          <ConditionMet xsi:nil="true"/>
+          <IndentLevel>{indent_level}</IndentLevel>
+          <ConditionSkip>false</ConditionSkip>
+          <IsSuffixAction>false</IsSuffixAction>
+          <DecimalTransient1>0</DecimalTransient1>
+          <Id>{action_id}</Id>
+          <ActionType>DecimalSet</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes/>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>0</InputMode>
+          <ConditionSetName xml:space="preserve">{variable}</ConditionSetName>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <ConditionStartOperator>0</ConditionStartOperator>
+          <ConditionStartValue>0</ConditionStartValue>
+          <ConditionStartValueType>0</ConditionStartValueType>
+          <ConditionStartType>0</ConditionStartType>
+          <DecimalContext1>{value}</DecimalContext1>
+          <DecimalContext2>0</DecimalContext2>
+          <DateContext1>0001-01-01T00:00:00</DateContext1>
+          <DateContext2>0001-01-01T00:00:00</DateContext2>
+          <Disabled>false</Disabled>
+          <RandomSounds/>
+          <ConditionExpressions/>
+        </CommandAction>"""
+
+
+def _validate_actions(actions, trigger_raw):
+    """Structural + shape validation over a command's raw actions list (materialized
+    order, before ordinal/pairing/group are computed). Any defect raises
+    ConditionValidationError - see build spec WP-A validation ruling: a dropped or
+    malformed condition action corrupts every downstream pairing index, so this hard-fails
+    rather than warning. SetDecimal/Write shapes hard-fail here too (WP-A2 ruling)."""
+
+    def fail(msg):
+        raise ConditionValidationError(f"Command '{trigger_raw}': {msg}")
+
+    stack = []  # one frame per open block: {"seen_else": bool}
+    for a in actions:
+        a_type = a.get("type")
+        if a_type == SET_DECIMAL_JSON_TYPE:
+            variable = a.get("variable")
+            if not isinstance(variable, str) or not variable:
+                fail("'SetDecimal' requires a non-empty string 'variable'")
+            value = a.get("value")
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                fail(f"'SetDecimal' requires a numeric 'value' (got {value!r})")
+            # json.load parses bare NaN/Infinity; .NET decimal has no NaN/Inf, so the
+            # emitted DecimalContext1 would silently break VoiceAttack import.
+            if not math.isfinite(value):
+                fail(f"'SetDecimal' requires a finite 'value' (got {value!r})")
+            continue
+        if a_type == WRITE_JSON_TYPE:
+            if not isinstance(a.get("text"), str):
+                fail("'Write' requires a string 'text' (empty string is legal)")
+            continue
+        if a_type not in CONDITION_ACTION_TYPES:
+            continue
+        has_condition = "condition" in a and a["condition"] is not None
+
+        if a_type == CONDITION_OPEN or a_type == "ElseIf":
+            if not has_condition:
+                fail(f"'{a_type}' is missing a required 'condition' object")
+            condition = a["condition"]
+            if not isinstance(condition, dict):
+                fail(f"'{a_type}' condition must be an object")
+            unknown = set(condition) - CONDITION_KEYS
+            if unknown:
+                fail(f"'{a_type}' condition has unknown key(s): {sorted(unknown)}")
+            value_type = condition.get("valueType")
+            if value_type != "Text":
+                fail(
+                    f"'{a_type}' condition valueType '{value_type}' is not supported - "
+                    "v1 supports Text only (Integer/Decimal XML carriers are unverified)"
+                )
+            left_operand = condition.get("leftOperand")
+            if not isinstance(left_operand, str) or not left_operand:
+                fail(f"'{a_type}' condition is missing a non-empty 'leftOperand'")
+            if "value" not in condition:
+                fail(f"'{a_type}' condition is missing a 'value' key (use \"\" for an empty compare value)")
+            operator = condition.get("operator")
+            if operator not in TEXT_OPERATORS:
+                fail(
+                    f"'{a_type}' condition has unknown operator '{operator}' - "
+                    f"Text operators are: {', '.join(TEXT_OPERATORS)}"
+                )
+
+        if a_type == CONDITION_OPEN:
+            stack.append({"seen_else": False})
+            continue
+
+        if a_type == "ElseIf":
+            if not stack:
+                fail("'ElseIf' found outside any open condition block")
+            if stack[-1]["seen_else"]:
+                fail("'ElseIf' follows 'Else' in the same condition block")
+        elif a_type == "Else":
+            if has_condition:
+                fail("'Else' must not carry a 'condition' object")
+            if not stack:
+                fail("'Else' found outside any open condition block")
+            if stack[-1]["seen_else"]:
+                fail("duplicate 'Else' in the same condition block")
+            stack[-1]["seen_else"] = True
+        elif a_type == CONDITION_CLOSE:
+            if has_condition:
+                fail("'EndCondition' must not carry a 'condition' object")
+            if not stack:
+                fail("'EndCondition' found without a matching 'BeginCondition'")
+            stack.pop()
+
+    if stack:
+        fail(f"{len(stack)} condition block(s) opened with 'BeginCondition' but never closed with 'EndCondition'")
 
 
 def command_xml(cmd):
@@ -390,11 +701,74 @@ def command_xml(cmd):
         else:
             warn(f"Command '{trigger_raw}': no key, mouse, or actions defined")
 
+    # (2) Validate condition-block structure and SetDecimal/Write shapes up front, on the
+    # raw action list, before any rendering: a malformed block must abort generation,
+    # never render a partial/corrupt chain (build spec WP-A/WP-A2 validation ruling).
+    _validate_actions(actions, trigger_raw)
+
+    # (1)+(3)+(4) materialize/compute/render collapsed into one pass so warn() output
+    # stays in exact original left-to-right order (dropped-action and inner per-action
+    # warnings must not be reordered relative to each other). Ordinal, IndentLevel and
+    # ConditionGroup are all knowable the moment an action is reached (they never depend
+    # on what comes later); ConditionPairing on a Begin/ElseIf/Else marker is the ordinal
+    # of the NEXT marker in its block, which isn't known until that marker is reached - so
+    # markers are rendered with a per-ordinal placeholder token that a second, non-
+    # rendering pass over the finished chunks substitutes for the real value.
     action_chunks = []
+    depth = 0
+    group_counter = 0
+    block_stack = []  # open blocks: {"group": int, "marker_ordinals": [ordinal, ...]}
+    finished_blocks = []  # [[ordinal, ...], ...] each in Begin..End order
+
+    def pairing_placeholder(ordinal):
+        return f"__CONDITION_PAIRING_{ordinal}__"
+
+    def resolve_pairing(chunk, ordinal, value):
+        # Replace the whole element, not the bare token: user-supplied text is
+        # angle-bracket-escaped, so the full element string cannot occur in content.
+        return chunk.replace(
+            f"<ConditionPairing>{pairing_placeholder(ordinal)}</ConditionPairing>",
+            f"<ConditionPairing>{value}</ConditionPairing>",
+        )
+
     for a in actions:
-        chunk = action_xml(a, len(action_chunks))
-        if chunk is not None:
+        a_type = a.get("type", "PressKey")
+        if a_type in CONDITION_ACTION_TYPES:
+            ordinal = len(action_chunks)
+            if a_type == CONDITION_OPEN:
+                group_counter += 1
+                group = group_counter
+                indent = depth
+                depth += 1
+                block_stack.append({"group": group, "marker_ordinals": [ordinal]})
+            elif a_type in CONDITION_BRANCH:
+                frame = block_stack[-1]
+                group = frame["group"]
+                indent = max(0, depth - 1)
+                frame["marker_ordinals"].append(ordinal)
+            else:  # CONDITION_CLOSE
+                frame = block_stack.pop()
+                group = frame["group"]
+                depth = max(0, depth - 1)
+                indent = depth
+                frame["marker_ordinals"].append(ordinal)
+                finished_blocks.append(frame["marker_ordinals"])
+            chunk = action_xml(a, ordinal, indent, pairing_placeholder(ordinal), group)
             action_chunks.append(chunk)
+        else:
+            chunk = action_xml(a, len(action_chunks), depth, 0, 0)
+            if chunk is not None:
+                action_chunks.append(chunk)
+
+    # ConditionPairing: forward chain Begin->ElseIf->...->Else->End; End points back to
+    # its block's Begin (build spec Shared facts + ADDENDUM "no ElseIf/Else" case).
+    for marker_ordinals in finished_blocks:
+        for i in range(len(marker_ordinals) - 1):
+            src, dst = marker_ordinals[i], marker_ordinals[i + 1]
+            action_chunks[src] = resolve_pairing(action_chunks[src], src, dst)
+        last, first = marker_ordinals[-1], marker_ordinals[0]
+        action_chunks[last] = resolve_pairing(action_chunks[last], last, first)
+
     actions_xml = "\n".join(action_chunks)
 
     return f"""    <Command>
@@ -570,6 +944,15 @@ Action Types:
   MouseAction  - Mouse click/scroll (left_click, right_click, double_click, scroll_up, scroll_down)
   Pause        - Wait (duration in seconds)
   Say          - Text-to-speech (text, volume, rate)
+  SetDecimal   - Set a decimal variable (variable, value). XML carrier inferred
+                 pending a VoiceAttack import probe.
+  Write        - Write text to the VoiceAttack event log, NOT keystrokes (text;
+                 variable tokens like {DEC:var} work)
+  BeginCondition / ElseIf / Else / EndCondition
+               - Condition block markers. BeginCondition/ElseIf require a
+                 "condition" object: {"valueType": "Text", "operator": "<name>",
+                 "leftOperand": "<string>", "value": "<string>"}. Text only;
+                 malformed blocks abort generation (exit 1, no output file).
 
 Key Names:
   Letters: a-z
@@ -611,7 +994,11 @@ def main():
         print(f"ERROR: Invalid JSON in {input_file}: {e}", file=sys.stderr)
         sys.exit(1)
 
-    xml = generate_profile(profile_data)
+    try:
+        xml = generate_profile(profile_data)
+    except ConditionValidationError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
 
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(xml)
