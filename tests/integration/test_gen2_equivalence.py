@@ -154,5 +154,27 @@ class W2SchemaInputTest(unittest.TestCase):
                 self.assertTrue(xml.startswith("<?xml"))
 
 
+class MoveClickDurationRoundTripTest(unittest.TestCase):
+    """Verify wave 1 finding 3: a Move record carrying a clickDuration (binary m[4] is
+    read unconditionally) emits Duration alongside X/Y, and vap2's XML path binds it
+    back to the same record shape (WP-B's W2.5 parity fix) — emit -> decode is lossless
+    for this shape. The Move+Duration XML carrier is inferred pending W5 export."""
+
+    def test_move_with_click_duration_round_trips(self):
+        model = {"profile": {"id": None, "name": "RT"},
+                 "commands": [{"phrase": "move it", "category": "mouse", "actions": [
+                     {"actionType": {"code": 12, "name": "MouseAction"},
+                      "contextCode": "Move", "action": "cursor_move",
+                      "clickDuration": 0.1, "x": 333, "y": 444}]}]}
+        xml, warnings = emit(model, DICT)
+        self.assertEqual(warnings, [])
+        decoded = vap2.decode_bytes(xml.encode("utf-8"))
+        action = decoded["commands"][0]["actions"][0]
+        self.assertEqual(action["contextCode"], "Move")
+        self.assertEqual(action.get("clickDuration"), 0.1)
+        self.assertEqual(action.get("x"), 333)
+        self.assertEqual(action.get("y"), 444)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

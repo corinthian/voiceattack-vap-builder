@@ -818,6 +818,45 @@ XML_ROW1_PAYLOAD_FIXTURE = """<?xml version="1.0" encoding="utf-8"?>
           <ConditionPairing>0</ConditionPairing>
           <ConditionGroup>0</ConditionGroup>
         </CommandAction>
+        <CommandAction>
+          <Ordinal>12</Ordinal>
+          <ActionType>MouseAction</ActionType>
+          <Duration>0.25</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>Move</Context>
+          <X>10</X>
+          <Y>20</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>13</Ordinal>
+          <ActionType>DecimalSet</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionSetName></ConditionSetName>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <DecimalContext1></DecimalContext1>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>14</Ordinal>
+          <ActionType>DecimalSet</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
       </ActionSequence>
     </Command>
   </Commands>
@@ -926,6 +965,39 @@ class XmlRow1PayloadTest(unittest.TestCase):
         self.assertEqual(a["text"], "log line")
         self.assertNotIn("duration", a)
 
+    def test_mouse_move_truthy_duration_binds_click_duration(self):
+        # Binary _mouse binds clickDuration from m[4] regardless of context (truthy-
+        # gated), so Move + truthy Duration must bind it on the XML path too. INFERRED
+        # pending W5 export confirmation (verifier finding 3, wave 1).
+        a = self.actions[12]
+        self.assertEqual(a["contextCode"], "Move")
+        self.assertEqual(a["clickDuration"], 0.25)
+        self.assertEqual((a["x"], a["y"]), (10, 20))
+        self.assertNotIn("scroll_clicks", a)
+        self.assertNotIn("duration", a)
+
+    def test_setdecimal_present_empty_elements(self):
+        # Binary rule (verifier finding 4): targetVariable = _opt_string(m[15]) — a
+        # present-but-empty string slot reads ""; value = decimal16(m[25]) or None —
+        # the value domain is a decimal string or None, NEVER "", so an empty
+        # DecimalContext1 binds None.
+        a = self.actions[13]
+        self.assertEqual(a["actionType"], {"code": 38, "name": "SetDecimal"})
+        self.assertIn("targetVariable", a)
+        self.assertIn("value", a)
+        self.assertEqual(a["targetVariable"], "")
+        self.assertIsNone(a["value"])
+
+    def test_setdecimal_absent_elements(self):
+        # Missing carrier elements mirror absent binary slots: both keys still present
+        # (binary _set_decimal assigns unconditionally), both None.
+        a = self.actions[14]
+        self.assertEqual(a["actionType"], {"code": 38, "name": "SetDecimal"})
+        self.assertIn("targetVariable", a)
+        self.assertIn("value", a)
+        self.assertIsNone(a["targetVariable"])
+        self.assertIsNone(a["value"])
+
 
 class Cs2BinaryXmlParityTest(unittest.TestCase):
     """W2.5 gate: binary decode of the CS2 reference profile vs XML decode of the profile
@@ -939,6 +1011,14 @@ class Cs2BinaryXmlParityTest(unittest.TestCase):
     GENERATOR = os.path.join(ROOT, "skills", "voiceattack-generator", "scripts",
                              "vap_generator.py")
 
+    # The ONLY legitimate command-set divergence in this pair: the reference profile's
+    # zoom command was extended inside VoiceAttack after generation (it carries the
+    # SetDecimal/Else/Write import-probe block), which also changed its phrase. Any
+    # other one-sided command is a decode/generate defect and must FAIL — intersection
+    # matching let a dropped command pass silently (verifier finding 2, wave 1).
+    KNOWN_ONLY_BINARY = {"zoom [out; in] [more;]"}
+    KNOWN_ONLY_XML = {"zoom [out; in]"}
+
     # Provenance keys, per source: binary carries offset/head/guid + a confidence tag,
     # XML carries source. Neither is action payload.
     _STRIP = {"offset", "head", "guid", "source"}
@@ -950,6 +1030,15 @@ class Cs2BinaryXmlParityTest(unittest.TestCase):
         at.pop("confidence", None)
         out["actionType"] = at
         return out
+
+    @staticmethod
+    def _by_phrase(prof):
+        """Document-order command lists per phrase, so duplicate phrases pair 1st-to-1st,
+        2nd-to-2nd — never last-wins collapsed."""
+        grouped = {}
+        for c in prof["commands"]:
+            grouped.setdefault(c["phrase"], []).append(c)
+        return grouped
 
     def test_row1_field_parity(self):
         require(self.BINARY)
@@ -966,25 +1055,38 @@ class Cs2BinaryXmlParityTest(unittest.TestCase):
             xml_prof = vap2.decode_file(out_vap, DICT)
         bin_prof = decode(self.BINARY)
 
-        bin_cmds = {c["phrase"]: c for c in bin_prof["commands"]}
-        xml_cmds = {c["phrase"]: c for c in xml_prof["commands"]}
+        bin_cmds = self._by_phrase(bin_prof)
+        xml_cmds = self._by_phrase(xml_prof)
+        # Phrase multisets must match up to the documented divergence: a command missing
+        # from either side fails loudly, it never just shrinks the intersection.
+        self.assertEqual(set(bin_cmds) - set(xml_cmds), self.KNOWN_ONLY_BINARY,
+                         "commands only in the binary decode")
+        self.assertEqual(set(xml_cmds) - set(bin_cmds), self.KNOWN_ONLY_XML,
+                         "commands only in the XML decode")
         common = sorted(set(bin_cmds) & set(xml_cmds))
         self.assertGreater(len(common), 0, "no phrase-matched commands — pair broken")
+        for phrase in common:
+            self.assertEqual(len(bin_cmds[phrase]), len(xml_cmds[phrase]),
+                             "duplicate count differs for phrase %r" % phrase)
 
         covered = {}
         mismatches = []
+        compared = 0
         for phrase in common:
-            b_acts = [self._normalize(a) for a in bin_cmds[phrase]["actions"]]
-            x_acts = [self._normalize(a) for a in xml_cmds[phrase]["actions"]]
-            self.assertEqual(len(b_acts), len(x_acts), "action count differs on %r" % phrase)
-            for b, x in zip(b_acts, x_acts):
-                name = b["actionType"]["name"]
-                covered[name] = covered.get(name, 0) + 1
-                if b != x:
-                    mismatches.append((phrase, b["index"], name, b, x))
+            for b_cmd, x_cmd in zip(bin_cmds[phrase], xml_cmds[phrase]):
+                compared += 1
+                b_acts = [self._normalize(a) for a in b_cmd["actions"]]
+                x_acts = [self._normalize(a) for a in x_cmd["actions"]]
+                self.assertEqual(len(b_acts), len(x_acts),
+                                 "action count differs on %r" % phrase)
+                for b, x in zip(b_acts, x_acts):
+                    name = b["actionType"]["name"]
+                    covered[name] = covered.get(name, 0) + 1
+                    if b != x:
+                        mismatches.append((phrase, b["index"], name, b, x))
         sys.stderr.write(
             "\n[CS2 binary-vs-XML parity] commands=%d actions-per-type=%s mismatches=%d\n"
-            % (len(common), sorted(covered.items()), len(mismatches)))
+            % (compared, sorted(covered.items()), len(mismatches)))
         self.assertEqual(mismatches, [], "field mismatches: %s" % mismatches[:3])
         # The pair must actually exercise the conditional row-1 core, or the gate is hollow.
         for must in ("PressKey", "BeginCondition", "ElseIf", "EndCondition"):

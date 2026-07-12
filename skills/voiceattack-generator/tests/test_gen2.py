@@ -383,6 +383,16 @@ class PerActionEquivalenceTest(unittest.TestCase):
                                      clickDuration=0.1)])
         self.assertIn("<Duration>0.1</Duration>", chunks[0])
 
+    def test_mouse_move_with_click_duration(self):
+        # Finding 3: binary m[4] is read unconditionally, so Move records can carry a
+        # click duration — it must reach Duration alongside X/Y, never drop silently.
+        chunks, warnings = emit_chunks([rec(12, "MouseAction", contextCode="Move",
+                                            x=333, y=444, clickDuration=0.1)])
+        self.assertEqual(warnings, [])
+        self.assertIn("<Duration>0.1</Duration>", chunks[0])
+        self.assertIn("<X>333</X>", chunks[0])
+        self.assertIn("<Y>444</Y>", chunks[0])
+
     def test_write(self):
         self.assert_single(rec(23, "Write", text="hello {DEC:myvar}"), WRITE_FRAGMENT)
 
@@ -622,9 +632,17 @@ class RefusalTest(unittest.TestCase):
         self.assertIn("MouseAction context", warnings[0])
 
     def test_code_name_mismatch_refuses_command(self):
+        # Finding 6: mismatch gets its own message, distinct from unknown-code.
         n_cmds, _, warnings = self.emit_model([rec(0, "Pause", duration=1.0)])
         self.assertEqual(n_cmds, 0)
+        self.assertIn("code/name mismatch", warnings[0])
+        self.assertNotIn("not in the dictionary", warnings[0])
+
+    def test_unknown_code_refuses_command(self):
+        n_cmds, _, warnings = self.emit_model([rec(999, None)])
+        self.assertEqual(n_cmds, 0)
         self.assertIn("not in the dictionary", warnings[0])
+        self.assertNotIn("mismatch", warnings[0])
 
     def test_nondefault_say_voice_warns_but_emits(self):
         n_cmds, n_actions, warnings = self.emit_model(
@@ -752,6 +770,77 @@ class NumberFormatTest(unittest.TestCase):
         self.assertNotIn("e", d.lower())
 
 
+class XmlControlCharTest(unittest.TestCase):
+    """Finding 1: control characters illegal in XML 1.0 (0x00-0x08, 0x0B, 0x0C,
+    0x0E-0x1F, 0x7F) hard-fail in the validate phase — exit 1, no output — from EVERY
+    string field. Tab/LF/CR are legal and pass."""
+
+    def assert_control_fails(self, actions, codepoint, **kw):
+        with self.assertRaisesRegex(EmitError, r"U\+%04X" % codepoint):
+            emit(model_for(actions, **kw), DICT)
+
+    def test_write_text_nul(self):
+        self.assert_control_fails([rec(23, "Write", text="a\x00b")], 0x00)
+
+    def test_say_text_backspace(self):
+        self.assert_control_fails([rec(13, "Say", text="hi\x08", volume=100, rate=0)],
+                                  0x08)
+
+    def test_launch_arguments_escape_char(self):
+        self.assert_control_fails(
+            [rec(3, "Launch", executablePath="C:\\x.exe", arguments="--a\x1bb")], 0x1B)
+
+    def test_launch_workdir_control(self):
+        self.assert_control_fails(
+            [rec(3, "Launch", executablePath="C:\\x.exe", workingDirectory="C:\\\x0e")],
+            0x0E)
+
+    def test_setdecimal_variable_control(self):
+        self.assert_control_fails(
+            [rec(38, "SetDecimal", targetVariable="va\x02r", value=1)], 0x02)
+
+    def test_condition_left_operand_control(self):
+        self.assert_control_fails(
+            [begin_text("Equals", "x", left="{TXT:\x01}"),
+             rec(20, "EndCondition", block={"pairing": 0})], 0x01)
+
+    def test_condition_value_control(self):
+        self.assert_control_fails(
+            [begin_text("Equals", "a\x0cb"),
+             rec(20, "EndCondition", block={"pairing": 0})], 0x0C)
+
+    def test_phrase_control(self):
+        self.assert_control_fails([presskey()], 0x1F, phrase="bad\x1fphrase")
+
+    def test_category_control(self):
+        self.assert_control_fails([presskey()], 0x0B, category="cat\x0b")
+
+    def test_profile_name_control(self):
+        model = model_for([presskey()])
+        model["profile"]["name"] = "bad\x7fname"
+        with self.assertRaisesRegex(EmitError, r"U\+007F"):
+            emit(model, DICT)
+
+    def test_error_names_command_action_and_field(self):
+        with self.assertRaisesRegex(
+                EmitError, r"Command 'zap': Write 'text' contains control character"):
+            emit(model_for([rec(23, "Write", text="\x00")], phrase="zap"), DICT)
+
+    def test_legal_whitespace_passes(self):
+        chunks, warnings = emit_chunks([rec(23, "Write", text="a\tb\nc\rd")])
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(chunks), 1)
+
+    def test_refused_command_control_char_emits_nothing(self):
+        # A control char inside a REFUSED command never renders, so it cannot poison
+        # the file; the command is already refused loudly.
+        xml, warnings = emit(model_for(
+            [{"decoded": False, "actionTypeCode": 99, "reason": "x"},
+             rec(23, "Write", text="a\x00b")]), DICT)
+        self.assertEqual(xml.count("<Command>"), 0)
+        self.assertEqual(len(warnings), 1)
+
+
 class CliSmokeTest(unittest.TestCase):
     """Exit codes mirror vap_generator.py: 0 clean, 1 hard fail (no file), 2 warnings."""
 
@@ -785,6 +874,34 @@ class CliSmokeTest(unittest.TestCase):
             doc_for([rec(21, "SetText", targetVariable="x", value="y"), presskey()]))
         self.assertEqual((code, wrote), (2, True))
         self.assertIn("WARNING", err)
+
+    def test_control_char_exits_1_no_output(self):
+        # Finding 1 end-to-end: the verifier's nullbyte repro now hard-fails.
+        code, wrote, err = self.run_cli(doc_for([rec(23, "Write", text="a\x00b")]))
+        self.assertEqual((code, wrote), (1, False))
+        self.assertIn("U+0000", err)
+
+    def test_non_utf8_input_exits_1_no_output(self):
+        # Finding 5: non-UTF-8 bytes are a designed failure, not a raw traceback.
+        with tempfile.TemporaryDirectory() as td:
+            inp = os.path.join(td, "in.json")
+            out = os.path.join(td, "out.vap")
+            with open(inp, "wb") as f:
+                f.write(b'{"schema_version": 2, "name": "\xff\xfe bad"}')
+            buf_out, buf_err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
+                code = cli_main([inp, out])
+            self.assertEqual((code, os.path.exists(out)), (1, False))
+            self.assertIn("ERROR", buf_err.getvalue())
+            self.assertIn("not UTF-8", buf_err.getvalue())
+
+    def test_non_utf8_load_raises_schema_error(self):
+        with tempfile.TemporaryDirectory() as td:
+            inp = os.path.join(td, "in.json")
+            with open(inp, "wb") as f:
+                f.write(b"\xff\xfe\x00\x00")
+            with self.assertRaisesRegex(SchemaError, "not UTF-8"):
+                schema_input.load(inp)
 
 
 if __name__ == "__main__":

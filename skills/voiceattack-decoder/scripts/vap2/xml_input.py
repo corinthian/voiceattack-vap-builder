@@ -129,6 +129,11 @@ def _parse_action(act_el, index, dictionary):
             if duration:
                 base["scroll_clicks"] = duration
         elif duration:
+            # Non-scroll contexts INCLUDING Move: binary _mouse binds clickDuration from
+            # m[4] regardless of context (truthy-gated), so a Move action with a truthy
+            # Duration binds it here too. Duration-as-click-duration on Move is INFERRED
+            # (Probe B's Move sample has m[4]=0.0; no export pairs them) — pending W5
+            # export confirmation (verifier finding 3, wave 1).
             base["clickDuration"] = duration
         if context == "Move":
             base["x"] = _local_int(act_el, "X")
@@ -170,10 +175,15 @@ def _parse_action(act_el, index, dictionary):
     # SetDecimal (38): target ConditionSetName, value DecimalContext1 (string form,
     # matching the binary path's SetDecimal record keys) — carriers inferred by IntSet
     # analogy, then CONFIRMED by the VA import probe (dictionary 0.4.1 note). Both keys
-    # always present, mirroring binary _set_decimal.
+    # always present, mirroring binary _set_decimal's exact rules (verifier finding 4):
+    # targetVariable = _opt_string(m[15]) — None when the slot is absent, "" when
+    # present-but-empty; value = decimal16(m[25]) with ReadError -> None — the binary
+    # value domain is a decimal string or None, NEVER "", so a present-but-empty
+    # DecimalContext1 (a state no binary profile can encode) binds None.
     if code == 38:
-        base["targetVariable"] = _local_text(act_el, "ConditionSetName")
-        base["value"] = _local_text(act_el, "DecimalContext1")
+        base["targetVariable"] = _local_text_or_empty(act_el, "ConditionSetName")
+        raw_value = _local_text_or_empty(act_el, "DecimalContext1")
+        base["value"] = raw_value if raw_value else None
         return base
 
     # Non-row-1 codes: name resolution + the legacy generic bindings (wave 2 scope,
@@ -277,8 +287,9 @@ def _local_text(parent, name):
 
 def _local_text_or_empty(parent, name):
     """Present-vs-absent text: an element that EXISTS with empty text (ElementTree .text
-    is None) returns "", a missing element returns None. Condition-value binding only —
-    other fields depend on _local_text's absent-on-empty behavior."""
+    is None) returns "", a missing element returns None. The row-1 payload idiom
+    (condition values, Say/Write text, Launch fields, SetDecimal carriers) — remaining
+    generic fields depend on _local_text's absent-on-empty behavior."""
     el = _find_local(parent, name)
     if el is None:
         return None

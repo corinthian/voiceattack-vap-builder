@@ -49,15 +49,35 @@ _BRANCHES = {"ElseIf", "Else"}
 
 _PLAIN_DECIMAL = re.compile(r"^-?\d+(\.\d+)?$")
 
+# Control characters the XML 1.0 Char production cannot represent in ANY form
+# (0x00-0x08, 0x0B, 0x0C, 0x0E-0x1F, plus 0x7F per the verify-wave-1 ruling); tab/LF/CR
+# are legal and pass. escape() passes these through, so a permissive emit would produce
+# an unimportable .vap while exiting 0 — unrepresentable input hard-fails instead
+# (contract §3; verify wave 1 finding 1).
+_XML_ILLEGAL = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]")
+
 
 def new_guid():
     return str(uuid.uuid4())
+
+
+def _check_xml_text(value, where):
+    """Hard-fail when a string field carries a control character illegal in XML 1.0.
+    Applied to EVERY emitted string field: profile name, phrases, categories, payload
+    texts, condition operands/values (verify wave 1 finding 1)."""
+    if isinstance(value, str):
+        m = _XML_ILLEGAL.search(value)
+        if m is not None:
+            raise EmitError(
+                "%s contains control character U+%04X - illegal in XML 1.0, "
+                "unrepresentable (hard-fail, no output file)" % (where, ord(m.group(0))))
 
 
 def emit(model, dictionary):
     """Render a schema_input model to profile XML. Returns (xml_text, warnings).
     Raises EmitError on any hard-fail defect — the caller must not have written output."""
     warnings = []
+    _check_xml_text(model["profile"].get("name"), "Profile name")
     command_chunks = []
     for cmd in model["commands"]:
         chunk = _command_xml(cmd, dictionary, warnings.append)
@@ -84,12 +104,10 @@ def route_actions(cmd, dictionary, warn):
                  % (phrase, idx, rec.get("actionTypeCode"), rec.get("reason", "no reason recorded")))
             return None
 
-        canonical = _resolve_canonical(rec.get("actionType") or {}, dictionary)
+        canonical, type_problem = _resolve_canonical(rec.get("actionType") or {}, dictionary)
         if canonical is None:
-            at = rec.get("actionType") or {}
-            warn("Command '%s': action %d type (code %r, name %r) is not in the dictionary - "
-                 "cannot be proven non-structural; refusing the whole command (contract §3)"
-                 % (phrase, idx, at.get("code"), at.get("name")))
+            warn("Command '%s': action %d %s - cannot be proven non-structural; "
+                 "refusing the whole command (contract §3)" % (phrase, idx, type_problem))
             return None
 
         if canonical in _STRUCTURAL:
@@ -141,18 +159,21 @@ def route_actions(cmd, dictionary, warn):
 
 
 def _resolve_canonical(action_type, dictionary):
-    """Record {code, name} -> canonical dictionary name, or None (refuse, never guess).
-    Names are the authority (contract §1); a code/name mismatch resolves to None."""
+    """Record {code, name} -> (canonical dictionary name, None), or (None, reason) when
+    the type must be refused. Names are the authority (contract §1); a code/name
+    mismatch and an unknown code get DISTINCT refusal reasons (verify wave 1 finding 6)
+    — neither is guessed around."""
     code = action_type.get("code")
     name = action_type.get("name")
     if code is not None and dictionary.action_entry(code) is not None:
         canonical = dictionary.canonical(code)
         if name is not None and name != canonical:
-            return None
-        return canonical
+            return None, ("type code %r is dictionary type %r but the record names it %r "
+                          "- code/name mismatch" % (code, canonical, name))
+        return canonical, None
     if name is not None and dictionary.code_for_name(name) is not None:
-        return name
-    return None
+        return name, None
+    return None, "type (code %r, name %r) is not in the dictionary" % (code, name)
 
 
 def _condition_refusal(cond, dictionary):
@@ -208,17 +229,29 @@ def _validate(plans, phrase, dictionary):
     def fail(msg):
         raise EmitError("Command '%s': %s" % (phrase, msg))
 
+    def check_clean(value, action_name, field):
+        _check_xml_text(value, "Command '%s': %s '%s'" % (phrase, action_name, field))
+
     stack = []  # one frame per open block: {"seen_else": bool}
     for canonical, rec in plans:
         if canonical == "SetDecimal":
             variable = rec.get("targetVariable")
             if not isinstance(variable, str) or not variable:
                 fail("'SetDecimal' requires a non-empty string 'targetVariable'")
+            check_clean(variable, canonical, "targetVariable")
             _validate_decimal_value(rec.get("value"), fail)
             continue
         if canonical == "Write":
             if not isinstance(rec.get("text"), str):
                 fail("'Write' requires a string 'text' (empty string is legal)")
+            check_clean(rec["text"], canonical, "text")
+            continue
+        if canonical == "Say":
+            check_clean(rec.get("text"), canonical, "text")
+            continue
+        if canonical == "Launch":
+            for field in ("executablePath", "arguments", "workingDirectory"):
+                check_clean(rec.get(field), canonical, field)
             continue
         if canonical not in _STRUCTURAL:
             continue
@@ -230,10 +263,14 @@ def _validate(plans, phrase, dictionary):
             left = cond.get("leftOperand")
             if not isinstance(left, str) or not left:
                 fail("'%s' condition is missing a non-empty 'leftOperand'" % canonical)
+            check_clean(left, canonical, "condition leftOperand")
             op_name = (cond.get("operator") or {}).get("name")
             if not dictionary.operator_is_valueless(op_name) and "value" not in cond:
                 fail("'%s' condition is missing a 'value' key (only Has Been Set / "
                      "Has Not Been Set omit it)" % canonical)
+            if "value" in cond:
+                # The renderer coerces via str(); check the coerced form it will emit.
+                check_clean(str(cond["value"]), canonical, "condition value")
 
         if canonical == "BeginCondition":
             stack.append({"seen_else": False})
@@ -330,6 +367,8 @@ def _command_xml(cmd, dictionary, warn):
     plans = route_actions(cmd, dictionary, warn)
     if plans is None:
         return None
+    _check_xml_text(cmd["phrase"], "Command %r: phrase" % (cmd["phrase"],))
+    _check_xml_text(cmd["category"], "Command '%s': category" % (cmd["phrase"],))
     _validate(plans, cmd["phrase"], dictionary)
     chunks = [_action_xml(p, dictionary, warn) for p in _compute_layout(plans)]
     return _command_envelope(cmd, "\n".join(chunks))
@@ -378,6 +417,12 @@ def _action_xml(plan, dictionary, warn):
         elif context == dictionary.cursor_move_code:
             x = _int_str(rec.get("x"), 0, "MouseAction x", warn)
             y = _int_str(rec.get("y"), 0, "MouseAction y", warn)
+            if rec.get("clickDuration"):
+                # Binary m[4] is read unconditionally, so a Move record can carry a
+                # click duration; emit it alongside X/Y rather than dropping it silently
+                # (verify wave 1 finding 3). The Move+Duration XML carrier is INFERRED
+                # pending the W5 export confirmation.
+                duration_str = _format_duration(rec["clickDuration"], warn)
         elif rec.get("clickDuration") is not None:
             duration_str = _format_duration(rec["clickDuration"], warn)
 

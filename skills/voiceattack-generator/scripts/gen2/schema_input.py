@@ -25,10 +25,14 @@ class SchemaError(Exception):
 
 
 def load(path):
-    """Load + validate a schema-JSON file. Returns the normalized model."""
+    """Load + validate a schema-JSON file. Returns the normalized model. Non-UTF-8
+    bytes and malformed JSON are DESIGNED failures (SchemaError -> CLI ERROR line,
+    exit 1), never raw tracebacks (verify wave 1 finding 5)."""
     with open(path, "r", encoding="utf-8") as f:
         try:
             doc = json.load(f)
+        except UnicodeDecodeError as e:
+            raise SchemaError("%s is not UTF-8 text: %s" % (path, e)) from e
         except json.JSONDecodeError as e:
             raise SchemaError("invalid JSON in %s: %s" % (path, e)) from e
     return parse(doc)
