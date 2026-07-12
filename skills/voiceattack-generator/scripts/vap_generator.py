@@ -4,12 +4,14 @@ VoiceAttack Profile Generator
 Generates valid .vap XML files from simple JSON input.
 
 Supports: PressKey, MouseAction, Pause, KeyDown, KeyUp, KeyToggle, Say,
-and condition blocks (BeginCondition, ElseIf, Else, EndCondition - Text compares only)
+SetDecimal, Write (VoiceAttack log), and condition blocks (BeginCondition,
+ElseIf, Else, EndCondition - Text compares only)
 
 Usage: python3 vap_generator.py <input.json> [output.vap]
 """
 
 import json
+import math
 import os
 import sys
 import uuid
@@ -264,11 +266,19 @@ TEXT_OPERATORS = {
 
 CONDITION_KEYS = {"valueType", "operator", "leftOperand", "value"}
 
+# JSON-level action names whose XML ActionType differs (SetDecimal -> DecimalSet,
+# Write -> WriteToLog). Kept as named constants, not quoted dispatch literals: the
+# dictionary audit reads quoted literals in action_xml's dispatch chain as XML
+# ActionType names.
+SET_DECIMAL_JSON_TYPE = "SetDecimal"
+WRITE_JSON_TYPE = "Write"
+
 
 class ConditionValidationError(Exception):
-    """A command's condition-action structure is invalid. Aborts the entire generation
-    run (no output file is written) - dropping one condition action would corrupt every
-    downstream pairing index and produce an importable-but-broken profile."""
+    """A command's action list fails hard-fail validation (condition-block structure,
+    SetDecimal/Write shape). Aborts the entire generation run (no output file is
+    written) - dropping one condition action would corrupt every downstream pairing
+    index and produce an importable-but-broken profile."""
 
 
 def new_guid():
@@ -277,14 +287,15 @@ def new_guid():
 
 def format_duration(value):
     """Validate a duration and format it as a plain decimal string (never
-    scientific notation). Invalid (non-numeric, zero, or negative) values
-    fall back to 0.1 with a warning."""
+    scientific notation). Invalid (non-numeric or negative) values fall back
+    to 0.1 with a warning. Explicit zero is legal - real VoiceAttack exports
+    carry PressKey Duration 0.0 (reference profile zoom command)."""
     try:
         d = float(value)
     except (TypeError, ValueError):
         warn(f"Invalid duration {value} - using default 0.1")
         return "0.1"
-    if d <= 0:
+    if d < 0:
         warn(f"Invalid duration {value} - using default 0.1")
         return "0.1"
     if isinstance(value, int) and not isinstance(value, bool):
@@ -367,6 +378,18 @@ def action_xml(action, ordinal=0, indent_level=0, condition_pairing=0, condition
         context = escape(action.get("text", ""))
         x = action.get("volume", 100)
         y = action.get("rate", 0)
+
+    elif action_type == SET_DECIMAL_JSON_TYPE:
+        # Own template: DecimalSet carries ConditionSetName + DecimalContext1 and no
+        # <Context> element (ground truth sec 4.6 ConditionSet analogy).
+        return _decimal_set_xml(action, ordinal, indent_level)
+
+    elif action_type == WRITE_JSON_TYPE:
+        # XML ActionType is WriteToLog (code 23) - writes to the VoiceAttack event log,
+        # not keystrokes. Text in Context, X = color code (mapping unverified - emit 0).
+        # Shape validated in _validate_actions (hard-fail).
+        action_type = "WriteToLog"
+        context = escape(action.get("text", ""))
 
     else:
         warn(f"Unknown action type '{action_type}' - skipped")
@@ -500,12 +523,69 @@ def _condition_action_xml(action, ordinal, indent_level, condition_pairing, cond
         </CommandAction>"""
 
 
-def _validate_conditions(actions, trigger_raw):
+def _format_decimal(value):
+    """Format a validated numeric value as plain decimal text (never scientific
+    notation), matching the IntSet sample's plain-literal convention."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    d = float(value)
+    s = repr(d)
+    if "e" in s or "E" in s:
+        s = f"{d:.10f}".rstrip("0").rstrip(".")
+    return s
+
+
+def _decimal_set_xml(action, ordinal, indent_level):
+    """Render a SetDecimal action as XML ActionType DecimalSet. CARRIER INFERRED, not
+    observed - no public XML export contains one (ground truth sec 4.1): target variable
+    in ConditionSetName and value in DecimalContext1 by exact analogy to the SOLID
+    IntSet/ConditionSet samples (secs 4.5/4.6); element order mirrors sec 4.6, the
+    Mandiant-generation serializer this generator's template already follows. Pending
+    the VoiceAttack import probe."""
+    action_id = new_guid()
+    variable = escape(action["variable"])  # shape validated in _validate_actions
+    value = _format_decimal(action["value"])
+    return f"""        <CommandAction>
+          <PairingSet>false</PairingSet>
+          <PairingSetElse>false</PairingSetElse>
+          <Ordinal>{ordinal}</Ordinal>
+          <ConditionMet xsi:nil="true"/>
+          <IndentLevel>{indent_level}</IndentLevel>
+          <ConditionSkip>false</ConditionSkip>
+          <IsSuffixAction>false</IsSuffixAction>
+          <DecimalTransient1>0</DecimalTransient1>
+          <Id>{action_id}</Id>
+          <ActionType>DecimalSet</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes/>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>0</InputMode>
+          <ConditionSetName xml:space="preserve">{variable}</ConditionSetName>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <ConditionStartOperator>0</ConditionStartOperator>
+          <ConditionStartValue>0</ConditionStartValue>
+          <ConditionStartValueType>0</ConditionStartValueType>
+          <ConditionStartType>0</ConditionStartType>
+          <DecimalContext1>{value}</DecimalContext1>
+          <DecimalContext2>0</DecimalContext2>
+          <DateContext1>0001-01-01T00:00:00</DateContext1>
+          <DateContext2>0001-01-01T00:00:00</DateContext2>
+          <Disabled>false</Disabled>
+          <RandomSounds/>
+          <ConditionExpressions/>
+        </CommandAction>"""
+
+
+def _validate_actions(actions, trigger_raw):
     """Structural + shape validation over a command's raw actions list (materialized
     order, before ordinal/pairing/group are computed). Any defect raises
     ConditionValidationError - see build spec WP-A validation ruling: a dropped or
     malformed condition action corrupts every downstream pairing index, so this hard-fails
-    rather than warning."""
+    rather than warning. SetDecimal/Write shapes hard-fail here too (WP-A2 ruling)."""
 
     def fail(msg):
         raise ConditionValidationError(f"Command '{trigger_raw}': {msg}")
@@ -513,6 +593,22 @@ def _validate_conditions(actions, trigger_raw):
     stack = []  # one frame per open block: {"seen_else": bool}
     for a in actions:
         a_type = a.get("type")
+        if a_type == SET_DECIMAL_JSON_TYPE:
+            variable = a.get("variable")
+            if not isinstance(variable, str) or not variable:
+                fail("'SetDecimal' requires a non-empty string 'variable'")
+            value = a.get("value")
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                fail(f"'SetDecimal' requires a numeric 'value' (got {value!r})")
+            # json.load parses bare NaN/Infinity; .NET decimal has no NaN/Inf, so the
+            # emitted DecimalContext1 would silently break VoiceAttack import.
+            if not math.isfinite(value):
+                fail(f"'SetDecimal' requires a finite 'value' (got {value!r})")
+            continue
+        if a_type == WRITE_JSON_TYPE:
+            if not isinstance(a.get("text"), str):
+                fail("'Write' requires a string 'text' (empty string is legal)")
+            continue
         if a_type not in CONDITION_ACTION_TYPES:
             continue
         has_condition = "condition" in a and a["condition"] is not None
@@ -605,10 +701,10 @@ def command_xml(cmd):
         else:
             warn(f"Command '{trigger_raw}': no key, mouse, or actions defined")
 
-    # (2) Validate condition-block structure up front, on the raw action list, before any
-    # rendering: a malformed block must abort generation, never render a partial/corrupt
-    # chain (build spec WP-A validation ruling).
-    _validate_conditions(actions, trigger_raw)
+    # (2) Validate condition-block structure and SetDecimal/Write shapes up front, on the
+    # raw action list, before any rendering: a malformed block must abort generation,
+    # never render a partial/corrupt chain (build spec WP-A/WP-A2 validation ruling).
+    _validate_actions(actions, trigger_raw)
 
     # (1)+(3)+(4) materialize/compute/render collapsed into one pass so warn() output
     # stays in exact original left-to-right order (dropped-action and inner per-action
@@ -848,6 +944,10 @@ Action Types:
   MouseAction  - Mouse click/scroll (left_click, right_click, double_click, scroll_up, scroll_down)
   Pause        - Wait (duration in seconds)
   Say          - Text-to-speech (text, volume, rate)
+  SetDecimal   - Set a decimal variable (variable, value). XML carrier inferred
+                 pending a VoiceAttack import probe.
+  Write        - Write text to the VoiceAttack event log, NOT keystrokes (text;
+                 variable tokens like {DEC:var} work)
   BeginCondition / ElseIf / Else / EndCondition
                - Condition block markers. BeginCondition/ElseIf require a
                  "condition" object: {"valueType": "Text", "operator": "<name>",

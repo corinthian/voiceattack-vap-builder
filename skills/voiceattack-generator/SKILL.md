@@ -131,6 +131,8 @@ Once user confirms, run the generator with the final JSON.
 | MouseAction | action, scroll_clicks |
 | Pause | duration (seconds) |
 | Say | text, volume (0-100), rate |
+| SetDecimal | variable, value (number) - sets a decimal variable; XML carrier inferred pending VoiceAttack import probe |
+| Write | text - writes to the VoiceAttack event LOG, not keystrokes; variable tokens like {DEC:var} work |
 | BeginCondition | condition (required) - opens an if block |
 | ElseIf | condition (required) - else-if branch |
 | Else | (no parameters) - else branch |
@@ -152,7 +154,7 @@ Interleave condition actions with ordinary actions to branch inside a command. `
 
 **Scope:** `valueType` must be `"Text"` - other value types (SmallInteger/Boolean/Integer/Decimal) are rejected because their XML carriers are unverified.
 
-**Validation:** unlike other generator defects (warn-and-drop), any malformed condition structure aborts generation with exit 1 and no output file - a dropped condition action would corrupt the block's pairing indexes and produce an importable-but-broken profile.
+**Validation:** unlike other generator defects (warn-and-drop), any malformed condition structure aborts generation with exit 1 and no output file - a dropped condition action would corrupt the block's pairing indexes and produce an importable-but-broken profile. Malformed `SetDecimal` (missing/empty `variable`, non-numeric `value`) and `Write` (missing/non-string `text`) hard-fail the same way.
 
 ## Mouse Actions
 
