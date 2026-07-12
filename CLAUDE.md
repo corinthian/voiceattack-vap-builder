@@ -9,7 +9,7 @@ VoiceAttack profile tools - accessibility utilities for creating and analyzing V
 1. **Generator**: JSON → VAP (create profiles from simple definitions)
 2. **Decoder**: Binary VAP → XML + JSON (reverse-engineer existing profiles)
 
-**Status:** Generator working (1.2.0, hardened 2026-07-09); generated profiles import into VoiceAttack (manual testing only — no automated import test exists). Decoder **V2 built on `feature/decoder-v2`** (`scripts/vap2/`, stdlib-only object-walk decoder replacing v1's flat scan): all six reference profiles decode with zero chain breaks, corinthian 201/1168 and Probe B 32/32 fully decoded, structured conditionals, regression harness checked in (`tests/`), acceptance criteria pass (see `docs/V2_Soak_Report.md`). v1 (`vap_decoder.py`) stays in-tree during soak. Pending: VoiceAttack import test of V2 output, then merge/tag. Conditional decoding: research complete, structured decode landed in V2.
+**Status:** 2.0.0. Generator emits conditional dispatch blocks (Begin/ElseIf/Else/End, Text compares), SetDecimal variables, and Write log actions — all import-tested in VoiceAttack (2026-07-12, two probes at 100%, including the DecimalSet carrier confirmation via log instrumentation). Decoder V2 (`scripts/vap2/`, stdlib-only object-walk) decodes binary and XML-form profiles into the same normative JSON (schema v1.1, frozen), structured conditionals included; all reference profiles decode with zero chain breaks and zero unknowns; a VoiceAttack re-export of generator output round-tripped byte-equivalent. v1 (`vap_decoder.py`) stays in-tree during soak. Regression harness: 31 tests (`tests/`). Dictionary 0.4.1 (audit exit 0). Next: encoder refactor plan against `docs/V2_JSON_Schema.md`.
 
 ## Commands
 
