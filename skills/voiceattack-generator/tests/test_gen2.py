@@ -542,28 +542,10 @@ class HardFailTest(unittest.TestCase):
         self.assert_fails([begin_text("Equals"), rec(20, "EndCondition")],
                           "missing a 'value'")
 
-    def test_setdecimal_empty_variable(self):
-        self.assert_fails([rec(38, "SetDecimal", targetVariable="", value=1)],
-                          "non-empty string 'targetVariable'")
-
-    def test_setdecimal_non_numeric_value(self):
-        self.assert_fails([rec(38, "SetDecimal", targetVariable="v", value="abc")],
-                          "plain decimal string")
-
-    def test_setdecimal_scientific_string(self):
-        self.assert_fails([rec(38, "SetDecimal", targetVariable="v", value="1e5")],
-                          "plain decimal string")
-
-    def test_setdecimal_nan(self):
-        self.assert_fails([rec(38, "SetDecimal", targetVariable="v",
-                               value=float("nan"))], "finite")
-
-    def test_setdecimal_bool(self):
-        self.assert_fails([rec(38, "SetDecimal", targetVariable="v", value=True)],
-                          "numeric 'value'")
-
-    def test_write_missing_text(self):
-        self.assert_fails([rec(23, "Write")], "requires a string 'text'")
+    # NOTE (W5 fix wave, finding 4 ruling 2026-07-13): malformed SetDecimal/Write
+    # payloads on the SCHEMA door are decoded-input degeneracies now — they warn-and-
+    # drop (SchemaDoorDegeneracyTest below). The authored-door hard-fail equivalents
+    # live in test_lower.py. Only structural condition defects remain here.
 
 
 class RefusalTest(unittest.TestCase):
@@ -788,7 +770,17 @@ class Row2EmitTest(unittest.TestCase):
                 self.assertEqual(len(CHUNK_RE.findall(xml)), 0)
                 self.assertIn("fieldsDecoded", warnings[0])
 
-    def test_row2_hard_fails(self):
+    def assert_payload_drops(self, record, pattern):
+        xml, warnings = emit(model_for([dict(record)]), DICT)
+        self.assertEqual(len(CHUNK_RE.findall(xml)), 0)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("payload defect", warnings[0])
+        self.assertRegex(warnings[0], pattern)
+
+    def test_row2_payload_defects_drop(self):
+        # W5 fix wave finding 4: schema-door payload defects are decoded-input
+        # degeneracies — loud drops, not profile-killing hard-fails. The authored
+        # door's exit-1 equivalents live in test_lower.py.
         cases = [
             (rec(21, "SetText", targetVariable="", value="x"),
              "non-empty string 'targetVariable'"),
@@ -809,10 +801,9 @@ class Row2EmitTest(unittest.TestCase):
         ]
         for r, pattern in cases:
             with self.subTest(pattern=pattern):
-                with self.assertRaisesRegex(EmitError, pattern):
-                    emit(model_for([r]), DICT)
+                self.assert_payload_drops(r, pattern)
 
-    def test_row2_control_chars_hard_fail(self):
+    def test_row2_control_chars_drop(self):
         cases = [rec(21, "SetText", targetVariable="v\x01", value="x"),
                  rec(21, "SetText", targetVariable="v", value="x\x00"),
                  rec(36, "SetBoolean", targetVariable="v\x02", value=True),
@@ -820,8 +811,7 @@ class Row2EmitTest(unittest.TestCase):
                  rec(40, "QuickInput", text="a\x1fb")]
         for r in cases:
             with self.subTest(type=r["actionType"]["name"]):
-                with self.assertRaisesRegex(EmitError, "control character"):
-                    emit(model_for([r]), DICT)
+                self.assert_payload_drops(r, "control character U\+00")
 
 
 class SchemaInputTest(unittest.TestCase):
@@ -937,60 +927,70 @@ class NumberFormatTest(unittest.TestCase):
 
 
 class XmlControlCharTest(unittest.TestCase):
-    """Finding 1: control characters illegal in XML 1.0 (0x00-0x08, 0x0B, 0x0C,
-    0x0E-0x1F, 0x7F) hard-fail in the validate phase — exit 1, no output — from EVERY
-    string field. Tab/LF/CR are legal and pass."""
+    """Finding 1 (wave 1) + the W5 door split (finding 4 ruling 2026-07-13): control
+    characters illegal in XML 1.0 (0x00-0x08, 0x0B, 0x0C, 0x0E-0x1F, 0x7F) can never
+    reach the output. Command-level fields (phrase, category, profile name) and
+    condition fields HARD-FAIL; per-action PAYLOAD fields on the schema door warn-and-
+    drop (decoded-input degeneracy) — the authored door's hard-fail lives in
+    test_lower.py. Tab/LF/CR are legal and pass."""
 
-    def assert_control_fails(self, actions, codepoint, **kw):
+    def assert_hard_fails(self, actions, codepoint, **kw):
         with self.assertRaisesRegex(EmitError, r"U\+%04X" % codepoint):
             emit(model_for(actions, **kw), DICT)
 
-    def test_write_text_nul(self):
-        self.assert_control_fails([rec(23, "Write", text="a\x00b")], 0x00)
+    def assert_drops(self, record, codepoint):
+        xml, warnings = emit(model_for([record, presskey()]), DICT)
+        self.assertEqual(len(CHUNK_RE.findall(xml)), 1)  # offender gone, sibling kept
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("U+%04X" % codepoint, warnings[0])
+        self.assertIn("emitting nothing for it", warnings[0])
 
-    def test_say_text_backspace(self):
-        self.assert_control_fails([rec(13, "Say", text="hi\x08", volume=100, rate=0)],
-                                  0x08)
+    def test_write_text_nul_drops(self):
+        self.assert_drops(rec(23, "Write", text="a\x00b"), 0x00)
 
-    def test_launch_arguments_escape_char(self):
-        self.assert_control_fails(
-            [rec(3, "Launch", executablePath="C:\\x.exe", arguments="--a\x1bb")], 0x1B)
+    def test_say_text_backspace_drops(self):
+        self.assert_drops(rec(13, "Say", text="hi\x08", volume=100, rate=0), 0x08)
 
-    def test_launch_workdir_control(self):
-        self.assert_control_fails(
-            [rec(3, "Launch", executablePath="C:\\x.exe", workingDirectory="C:\\\x0e")],
+    def test_launch_arguments_escape_char_drops(self):
+        self.assert_drops(
+            rec(3, "Launch", executablePath="C:\\x.exe", arguments="--a\x1bb"), 0x1B)
+
+    def test_launch_workdir_control_drops(self):
+        self.assert_drops(
+            rec(3, "Launch", executablePath="C:\\x.exe", workingDirectory="C:\\\x0e"),
             0x0E)
 
-    def test_setdecimal_variable_control(self):
-        self.assert_control_fails(
-            [rec(38, "SetDecimal", targetVariable="va\x02r", value=1)], 0x02)
+    def test_setdecimal_variable_control_drops(self):
+        self.assert_drops(rec(38, "SetDecimal", targetVariable="va\x02r", value=1),
+                          0x02)
 
-    def test_condition_left_operand_control(self):
-        self.assert_control_fails(
+    def test_drop_warning_names_command_action_and_field(self):
+        _, warnings = emit(model_for([rec(23, "Write", text="\x00")], phrase="zap"),
+                           DICT)
+        self.assertIn("Command 'zap': action 0 Write payload defect: 'text' contains "
+                      "control character U+0000", warnings[0])
+
+    def test_condition_left_operand_control_hard_fails(self):
+        self.assert_hard_fails(
             [begin_text("Equals", "x", left="{TXT:\x01}"),
              rec(20, "EndCondition", block={"pairing": 0})], 0x01)
 
-    def test_condition_value_control(self):
-        self.assert_control_fails(
+    def test_condition_value_control_hard_fails(self):
+        self.assert_hard_fails(
             [begin_text("Equals", "a\x0cb"),
              rec(20, "EndCondition", block={"pairing": 0})], 0x0C)
 
-    def test_phrase_control(self):
-        self.assert_control_fails([presskey()], 0x1F, phrase="bad\x1fphrase")
+    def test_phrase_control_hard_fails(self):
+        self.assert_hard_fails([presskey()], 0x1F, phrase="bad\x1fphrase")
 
-    def test_category_control(self):
-        self.assert_control_fails([presskey()], 0x0B, category="cat\x0b")
+    def test_category_control_hard_fails(self):
+        self.assert_hard_fails([presskey()], 0x0B, category="cat\x0b")
 
-    def test_profile_name_control(self):
+    def test_profile_name_control_hard_fails(self):
         model = model_for([presskey()])
         model["profile"]["name"] = "bad\x7fname"
         with self.assertRaisesRegex(EmitError, r"U\+007F"):
             emit(model, DICT)
-
-    def test_error_names_command_action_and_field(self):
-        with self.assertRaisesRegex(
-                EmitError, r"Command 'zap': Write 'text' contains control character"):
-            emit(model_for([rec(23, "Write", text="\x00")], phrase="zap"), DICT)
 
     def test_legal_whitespace_passes(self):
         chunks, warnings = emit_chunks([rec(23, "Write", text="a\tb\nc\rd")])
@@ -1005,6 +1005,95 @@ class XmlControlCharTest(unittest.TestCase):
              rec(23, "Write", text="a\x00b")]), DICT)
         self.assertEqual(xml.count("<Command>"), 0)
         self.assertEqual(len(warnings), 1)
+
+
+class SchemaDoorDegeneracyTest(unittest.TestCase):
+    """W5 fix wave, finding 4 — XO ruling 2026-07-13: degenerate DECODED records are
+    non-structural decoded-input degeneracies, not authoring errors. They warn-and-
+    drop (loud, action named) and every healthy command still emits; exit-2 class.
+    The authored door keeps exit 1 via lower.py's validation (test_lower.py)."""
+
+    def assert_degeneracy_drops(self, record, defect_fragment):
+        model = {"profile": {"id": None, "name": "T"}, "commands": [
+            {"phrase": "sick", "category": "g", "actions": [dict(record)]},
+            {"phrase": "healthy", "category": "g", "actions": [presskey()]}]}
+        xml, warnings = emit(model, DICT)
+        self.assertEqual(xml.count("<Command>"), 2)  # both commands survive
+        self.assertEqual(len(CHUNK_RE.findall(xml)), 1)  # only the healthy action
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("payload defect", warnings[0])
+        self.assertIn(defect_fragment, warnings[0])
+        self.assertIn("decoded-input degeneracy ruling 2026-07-13", warnings[0])
+        return warnings[0]
+
+    def test_legacy_conditionset_absent_name_and_x(self):
+        # ConditionSet with absent ConditionSetName/X decodes to targetVariable ""
+        # and value None (the verifier's degenerate legacy shape).
+        self.assert_degeneracy_drops(
+            rec(18, "SetSmallInt", targetVariable="", value=None),
+            "non-empty string 'targetVariable'")
+
+    def test_setboolean_mode_absent_no_value(self):
+        self.assert_degeneracy_drops(
+            rec(36, "SetBoolean", targetVariable="v"), "boolean 'value'")
+
+    def test_setinteger_value_none(self):
+        self.assert_degeneracy_drops(
+            rec(37, "SetInteger", targetVariable="v", valueSourceMode=0, value=None),
+            "integer 'value'")
+
+    def test_setinteger_int32_overflow_drops_naming_value(self):
+        # Finding 3, schema door: 2147483648 would pass xmllint and fail VA import.
+        w = self.assert_degeneracy_drops(
+            rec(37, "SetInteger", targetVariable="v", value=2147483648),
+            "2147483648")
+        self.assertIn("outside Int32", w)
+
+    def test_setinteger_int32_underflow_drops(self):
+        self.assert_degeneracy_drops(
+            rec(37, "SetInteger", targetVariable="v", value=-2147483649),
+            "outside Int32")
+
+    def test_int32_boundaries_emit(self):
+        chunks, warnings = emit_chunks(
+            [rec(37, "SetInteger", targetVariable="v", value=2147483647),
+             rec(37, "SetInteger", targetVariable="w", value=-2147483648)])
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(chunks), 2)
+
+    def test_setdecimal_degeneracies_drop(self):
+        for record, fragment in (
+                (rec(38, "SetDecimal", targetVariable="", value=1),
+                 "non-empty string 'targetVariable'"),
+                (rec(38, "SetDecimal", targetVariable="v", value="abc"),
+                 "plain decimal string"),
+                (rec(38, "SetDecimal", targetVariable="v", value="1e5"),
+                 "plain decimal string"),
+                (rec(38, "SetDecimal", targetVariable="v", value=float("nan")),
+                 "finite"),
+                (rec(38, "SetDecimal", targetVariable="v", value=True),
+                 "numeric 'value'")):
+            with self.subTest(fragment=fragment):
+                self.assert_degeneracy_drops(record, fragment)
+
+    def test_write_missing_text_drops(self):
+        self.assert_degeneracy_drops(rec(23, "Write"), "string 'text'")
+
+    def test_valuesource_marker_on_settext_refuses(self):
+        # Finding 2: a marker beside a plausible literal must not emit the literal.
+        xml, warnings = emit(model_for(
+            [rec(21, "SetText", targetVariable="v", value="x",
+                 valueSource={"mode": 4, "decoded": False})]), DICT)
+        self.assertEqual(len(CHUNK_RE.findall(xml)), 0)
+        self.assertIn("value-source marker", warnings[0])
+        self.assertIn("W5 export probe", warnings[0])
+
+    def test_valuesource_marker_on_quickinput_refuses(self):
+        xml, warnings = emit(model_for(
+            [rec(40, "QuickInput", text="x",
+                 valueSource={"mode": 2, "decoded": False})]), DICT)
+        self.assertEqual(len(CHUNK_RE.findall(xml)), 0)
+        self.assertIn("value-source marker", warnings[0])
 
 
 class CliSmokeTest(unittest.TestCase):
@@ -1041,11 +1130,35 @@ class CliSmokeTest(unittest.TestCase):
         self.assertEqual((code, wrote), (2, True))
         self.assertIn("WARNING", err)
 
-    def test_control_char_exits_1_no_output(self):
-        # Finding 1 end-to-end: the verifier's nullbyte repro now hard-fails.
-        code, wrote, err = self.run_cli(doc_for([rec(23, "Write", text="a\x00b")]))
-        self.assertEqual((code, wrote), (1, False))
+    def test_payload_control_char_exits_2_with_output(self):
+        # W5 door split: the nullbyte payload now drops loudly on the schema door —
+        # output written WITHOUT the offender (still valid XML), exit 2. The authored
+        # door still exits 1 (test_lower.py).
+        code, wrote, err = self.run_cli(
+            doc_for([rec(23, "Write", text="a\x00b"), presskey()]))
+        self.assertEqual((code, wrote), (2, True))
         self.assertIn("U+0000", err)
+
+    def test_phrase_control_char_still_exits_1(self):
+        doc = doc_for([presskey()])
+        doc["commands"][0]["phrase"] = "bad\x1fphrase"
+        code, wrote, err = self.run_cli(doc)
+        self.assertEqual((code, wrote), (1, False))
+        self.assertIn("U+001F", err)
+
+    def test_warnings_printed_before_hard_fail(self):
+        # W5 fix wave finding 4 (CLI half): warnings accumulated before a hard-fail
+        # must reach stderr, not be swallowed with the exception.
+        doc = doc_for([rec(24, "SetClipboard", text="dropme"), presskey()])
+        doc["commands"].append(
+            {"id": "x", "phrase": "broken", "category": {"value": "g"},
+             "actionCount": 1,
+             "actions": [rec(20, "EndCondition", block={"pairing": 0})]})
+        code, wrote, err = self.run_cli(doc)
+        self.assertEqual((code, wrote), (1, False))
+        self.assertIn("WARNING", err)
+        self.assertIn("SetClipboard", err)
+        self.assertIn("ERROR", err)
 
     def test_non_utf8_input_exits_1_no_output(self):
         # Finding 5: non-UTF-8 bytes are a designed failure, not a raw traceback.

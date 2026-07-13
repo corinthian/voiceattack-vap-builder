@@ -981,21 +981,22 @@ def _run_gen2_pipeline(profile_data, no_idiom):
     from gen2.emit_profile import EmitError, emit as gen2_emit
     from gen2.lower import LoweringError, lower_profile
 
+    # INFO lines are idiom-compiler visibility (D2 ruling: auto-lowering is the
+    # default, not a defect — they never count toward the warning exit code). Both
+    # channels STREAM as they occur, so everything accumulated before a hard-fail is
+    # already on stderr when the ERROR line lands (W5 fix wave, finding 4).
+    print_info = lambda line: print(f"INFO: {line}", file=sys.stderr)  # noqa: E731
+    print_warn = lambda line: print(f"WARNING: {line}", file=sys.stderr)  # noqa: E731
     try:
         dictionary = gen2_names.load()
         model, infos, lower_warnings = lower_profile(
-            profile_data, dictionary, no_idiom=no_idiom)
-        xml, emit_warnings = gen2_emit(model, dictionary)
+            profile_data, dictionary, no_idiom=no_idiom,
+            info=print_info, warn=print_warn)
+        xml, emit_warnings = gen2_emit(model, dictionary, warn=print_warn)
     except (LoweringError, EmitError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
 
-    for line in infos:
-        # Idiom-compiler visibility (D2 ruling: auto-lowering is the default, not a
-        # defect — INFO lines never count toward the warning exit code).
-        print(f"INFO: {line}", file=sys.stderr)
-    for w in lower_warnings + emit_warnings:
-        print(f"WARNING: {w}", file=sys.stderr)
     return xml, len(lower_warnings) + len(emit_warnings)
 
 

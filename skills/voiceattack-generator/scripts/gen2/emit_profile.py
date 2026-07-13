@@ -66,26 +66,44 @@ def new_guid():
     return str(uuid.uuid4())
 
 
-def _check_xml_text(value, where):
-    """Hard-fail when a string field carries a control character illegal in XML 1.0.
-    Applied to EVERY emitted string field: profile name, phrases, categories, payload
-    texts, condition operands/values (verify wave 1 finding 1)."""
+def _xml_defect(value):
+    """'U+00XX' codepoint label when a string carries a control character illegal in
+    XML 1.0, else None (verify wave 1 finding 1)."""
     if isinstance(value, str):
         m = _XML_ILLEGAL.search(value)
         if m is not None:
-            raise EmitError(
-                "%s contains control character U+%04X - illegal in XML 1.0, "
-                "unrepresentable (hard-fail, no output file)" % (where, ord(m.group(0))))
+            return "U+%04X" % ord(m.group(0))
+    return None
 
 
-def emit(model, dictionary):
+def _check_xml_text(value, where):
+    """Hard-fail when a string field carries a control character illegal in XML 1.0.
+    Since the W5 fix-wave door split (finding 4 ruling), this hard-fail form guards
+    profile name, phrases, categories, and condition fields; per-action PAYLOAD
+    fields go through _payload_defect's lenient warn-and-drop instead."""
+    cp = _xml_defect(value)
+    if cp is not None:
+        raise EmitError(
+            "%s contains control character %s - illegal in XML 1.0, "
+            "unrepresentable (hard-fail, no output file)" % (where, cp))
+
+
+def emit(model, dictionary, warn=None):
     """Render a schema_input model to profile XML. Returns (xml_text, warnings).
-    Raises EmitError on any hard-fail defect — the caller must not have written output."""
+    Raises EmitError on any hard-fail defect — the caller must not have written
+    output. `warn`, when given, is called with each warning AS IT OCCURS, so a CLI
+    can surface everything accumulated before a hard-fail (W5 fix wave, finding 4)."""
     warnings = []
+
+    def _warn(msg):
+        warnings.append(msg)
+        if warn is not None:
+            warn(msg)
+
     _check_xml_text(model["profile"].get("name"), "Profile name")
     command_chunks = []
     for cmd in model["commands"]:
-        chunk = _command_xml(cmd, dictionary, warnings.append)
+        chunk = _command_xml(cmd, dictionary, _warn)
         if chunk is not None:
             command_chunks.append(chunk)
 
@@ -170,6 +188,29 @@ def route_actions(cmd, dictionary, warn):
                      "W5 export probe)" % (phrase, idx, mode,
                                            unevidenced or ["valueSourceMode"]))
                 continue
+
+        if canonical in ("SetText", "QuickInput") and "valueSource" in rec:
+            # Defense-in-depth (W5 fix wave, finding 2): no decode path emits a
+            # value-source marker on these types today, but a record carrying one
+            # alongside a plausible literal must NOT emit the literal and silently
+            # drop the marker.
+            warn("Command '%s': action %d %s carries a value-source marker (mode %r) "
+                 "- no evidenced non-literal carrier; emitting nothing for it "
+                 "(contract §3; W5 export probe)" % (phrase, idx, canonical,
+                 (rec.get("valueSource") or {}).get("mode")))
+            continue
+
+        defect = _payload_defect(canonical, rec)
+        if defect is not None:
+            # Decoded-input degeneracy (W5 fix wave, finding 4 — XO ruling
+            # 2026-07-13): non-structural payload defects on DECODED records drop
+            # loudly and the rest of the profile survives (exit 2). Authored input
+            # reaches emit only through lower.py, whose own validation hard-fails
+            # the same defects (exit 1) — the door split.
+            warn("Command '%s': action %d %s payload defect: %s - emitting nothing "
+                 "for it (decoded-input degeneracy ruling 2026-07-13, contract §3)"
+                 % (phrase, idx, canonical, defect))
+            continue
 
         if canonical == "SetSmallInt":
             # SANCTIONED NORMALIZATION (plan row-2 note): VA2 merged Small Int into
@@ -273,7 +314,85 @@ def _mouse_context(rec, dictionary):
     return None
 
 
-# --- phase 2: hard-fail validation (structure + SetDecimal/Write payloads) ---------
+# --- phase 2: hard-fail validation (condition structure + command-level fields) ----
+
+_I32_MIN, _I32_MAX = -(2 ** 31), 2 ** 31 - 1
+
+
+def _payload_defect(canonical, rec):
+    """Non-structural payload validation, lenient side of the W5 door split (finding
+    4 ruling 2026-07-13): a defective payload on a DECODED record is a decoded-input
+    degeneracy, not an authoring error — the router warns and drops the action so
+    every healthy command still emits. The simple authoring door reaches emit only
+    through lower.py, whose own validation hard-fails these same defects (exit 1).
+    Returns a human-readable defect, or None when the payload is emittable."""
+    def clean(value, field):
+        cp = _xml_defect(value)
+        if cp is not None:
+            return "%s contains control character %s, illegal in XML 1.0" % (field, cp)
+        return None
+
+    if canonical == "SetDecimal":
+        variable = rec.get("targetVariable")
+        if not isinstance(variable, str) or not variable:
+            return "requires a non-empty string 'targetVariable' (got %r)" % (variable,)
+        value = rec.get("value")
+        if isinstance(value, bool):
+            return "requires a numeric 'value' (got %r)" % (value,)
+        if isinstance(value, (int, float)):
+            if not math.isfinite(value):
+                return "requires a finite 'value' (got %r)" % (value,)
+        elif isinstance(value, str):
+            if not _PLAIN_DECIMAL.match(value):
+                return "requires a plain decimal string 'value' (got %r)" % (value,)
+        else:
+            return "requires a numeric 'value' (got %r)" % (value,)
+        return clean(variable, "'targetVariable'")
+    if canonical == "Write":
+        if not isinstance(rec.get("text"), str):
+            return "requires a string 'text' (got %r)" % (rec.get("text"),)
+        return clean(rec["text"], "'text'")
+    if canonical == "Say":
+        return clean(rec.get("text"), "'text'")
+    if canonical == "Launch":
+        for field in ("executablePath", "arguments", "workingDirectory"):
+            defect = clean(rec.get(field), "'%s'" % field)
+            if defect is not None:
+                return defect
+        return None
+    if canonical == "SetText":
+        variable = rec.get("targetVariable")
+        if not isinstance(variable, str) or not variable:
+            return "requires a non-empty string 'targetVariable' (got %r)" % (variable,)
+        if "value" in rec and not isinstance(rec["value"], str):
+            return "requires a string 'value' when present (got %r)" % (rec["value"],)
+        return clean(variable, "'targetVariable'") or clean(rec.get("value"), "'value'")
+    if canonical == "SetBoolean":
+        variable = rec.get("targetVariable")
+        if not isinstance(variable, str) or not variable:
+            return "requires a non-empty string 'targetVariable' (got %r)" % (variable,)
+        if not isinstance(rec.get("value"), bool):
+            return "requires a boolean 'value' (got %r)" % (rec.get("value"),)
+        return clean(variable, "'targetVariable'")
+    if canonical in ("SetInteger", "SetSmallInt"):
+        variable = rec.get("targetVariable")
+        if not isinstance(variable, str) or not variable:
+            return "requires a non-empty string 'targetVariable' (got %r)" % (variable,)
+        value = rec.get("value")
+        if isinstance(value, bool) or not isinstance(value, int):
+            return "requires an integer 'value' (got %r)" % (value,)
+        if not (_I32_MIN <= value <= _I32_MAX):
+            # <X> is Int32 on both the serializer and the binary slot (W5 fix wave,
+            # finding 3) — an out-of-range emit would pass xmllint and fail VA import.
+            return ("'value' %d is outside Int32 [%d, %d] - VA's serializer would "
+                    "reject the import" % (value, _I32_MIN, _I32_MAX))
+        return clean(variable, "'targetVariable'")
+    if canonical == "QuickInput":
+        if not isinstance(rec.get("text"), str):
+            return "requires a string 'text' (got %r)" % (rec.get("text"),)
+        return clean(rec["text"], "'text'")
+    return None
+
 
 def _validate(plans, phrase, dictionary):
     def fail(msg):
@@ -284,59 +403,10 @@ def _validate(plans, phrase, dictionary):
 
     stack = []  # one frame per open block: {"seen_else": bool}
     for canonical, rec in plans:
-        if canonical == "SetDecimal":
-            variable = rec.get("targetVariable")
-            if not isinstance(variable, str) or not variable:
-                fail("'SetDecimal' requires a non-empty string 'targetVariable'")
-            check_clean(variable, canonical, "targetVariable")
-            _validate_decimal_value(rec.get("value"), fail)
-            continue
-        if canonical == "Write":
-            if not isinstance(rec.get("text"), str):
-                fail("'Write' requires a string 'text' (empty string is legal)")
-            check_clean(rec["text"], canonical, "text")
-            continue
-        if canonical == "Say":
-            check_clean(rec.get("text"), canonical, "text")
-            continue
-        if canonical == "Launch":
-            for field in ("executablePath", "arguments", "workingDirectory"):
-                check_clean(rec.get(field), canonical, field)
-            continue
-        if canonical == "SetText":
-            variable = rec.get("targetVariable")
-            if not isinstance(variable, str) or not variable:
-                fail("'SetText' requires a non-empty string 'targetVariable'")
-            if "value" in rec and not isinstance(rec["value"], str):
-                fail("'SetText' requires a string 'value' when present (got %r)"
-                     % (rec["value"],))
-            check_clean(variable, canonical, "targetVariable")
-            check_clean(rec.get("value"), canonical, "value")
-            continue
-        if canonical == "SetBoolean":
-            variable = rec.get("targetVariable")
-            if not isinstance(variable, str) or not variable:
-                fail("'SetBoolean' requires a non-empty string 'targetVariable'")
-            if not isinstance(rec.get("value"), bool):
-                fail("'SetBoolean' requires a boolean 'value' (got %r)"
-                     % (rec.get("value"),))
-            check_clean(variable, canonical, "targetVariable")
-            continue
-        if canonical in ("SetInteger", "SetSmallInt"):
-            variable = rec.get("targetVariable")
-            if not isinstance(variable, str) or not variable:
-                fail("'%s' requires a non-empty string 'targetVariable'" % canonical)
-            value = rec.get("value")
-            if isinstance(value, bool) or not isinstance(value, int):
-                fail("'%s' requires an integer 'value' (got %r)" % (canonical, value))
-            check_clean(variable, canonical, "targetVariable")
-            continue
-        if canonical == "QuickInput":
-            if not isinstance(rec.get("text"), str):
-                fail("'QuickInput' requires a string 'text' (empty string is legal)")
-            check_clean(rec["text"], canonical, "text")
-            continue
         if canonical not in _STRUCTURAL:
+            # Per-action payload validation moved to routing's lenient
+            # _payload_defect path (W5 fix wave, finding 4 door split); by the time
+            # a non-structural plan reaches here its payload is emittable.
             continue
 
         cond = rec.get("condition")
@@ -381,22 +451,6 @@ def _validate(plans, phrase, dictionary):
         raise EmitError(
             "Command '%s': %d condition block(s) opened with 'BeginCondition' but never "
             "closed with 'EndCondition'" % (phrase, len(stack)))
-
-
-def _validate_decimal_value(value, fail):
-    """SetDecimal value: schema JSON carries the exact decimal STRING the binary decode
-    produced (plain form, never scientific); bare numbers are accepted too. .NET decimal
-    has no NaN/Inf, so a non-finite value would silently break VoiceAttack import."""
-    if isinstance(value, bool):
-        fail("'SetDecimal' requires a numeric 'value' (got %r)" % (value,))
-    elif isinstance(value, (int, float)):
-        if not math.isfinite(value):
-            fail("'SetDecimal' requires a finite 'value' (got %r)" % (value,))
-    elif isinstance(value, str):
-        if not _PLAIN_DECIMAL.match(value):
-            fail("'SetDecimal' requires a plain decimal string 'value' (got %r)" % (value,))
-    else:
-        fail("'SetDecimal' requires a numeric 'value' (got %r)" % (value,))
 
 
 # --- phase 3: layout (Ordinal / IndentLevel / ConditionPairing / ConditionGroup) ----
@@ -512,6 +566,9 @@ def _action_xml(plan, dictionary, warn):
         # FreeType (s4 sample): text Context (variable tokens legal), Duration =
         # perKeyDelay seconds (WP-B's coined name; W7 docs list). InputMode reads 1
         # on both banked samples — semantics unverified, mirrored verbatim.
+        # W7 docs note: perKeyDelay 0 emits Duration 0 and re-decodes with the key
+        # ABSENT (the decode's truthy gate) — sanctioned normalization, same family
+        # as clickDuration.
         context = escape(rec["text"])
         duration_str = _format_duration(rec.get("perKeyDelay", 0), warn)
         input_mode = "1"

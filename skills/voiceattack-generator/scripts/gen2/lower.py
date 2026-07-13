@@ -22,7 +22,10 @@ reported on the INFO channel with the full alternative->action mapping — never
 """
 
 import itertools
+import math
 import re
+
+from .emit_profile import _XML_ILLEGAL
 
 
 class LoweringError(Exception):
@@ -44,12 +47,14 @@ _GROUP_RE = re.compile(r"\[([^\[\]]*)\]")
 _DISPATCH_OPERAND = "{LASTSPOKENCMD}"
 
 
-def lower_profile(profile_data, dictionary, no_idiom=False):
+def lower_profile(profile_data, dictionary, no_idiom=False, info=None, warn=None):
     """Simple-format document -> (schema model, info lines, warning lines).
 
     The model is the same shape schema_input.parse returns; infos are the idiom
     compiler's visibility lines (they do NOT count as warnings — auto-lowering is the
-    D2 default, not a defect); warnings mirror legacy warn() texts."""
+    D2 default, not a defect); warnings mirror legacy warn() texts. `info`/`warn`
+    callbacks, when given, fire AS LINES OCCUR so a CLI can surface everything
+    accumulated before a hard-fail (W5 fix wave, finding 4)."""
     if isinstance(profile_data, dict) and "schema_version" in profile_data:
         # Wrong door (W4 fix-wave finding 4): schema_version marks a schema-JSON
         # (decoded) document — that input enters the pipeline at stage two.
@@ -60,12 +65,22 @@ def lower_profile(profile_data, dictionary, no_idiom=False):
             % (profile_data.get("schema_version"),))
     infos = []
     warnings = []
+
+    def _info(msg):
+        infos.append(msg)
+        if info is not None:
+            info(msg)
+
+    def _warn(msg):
+        warnings.append(msg)
+        if warn is not None:
+            warn(msg)
+
     commands = []
     for cmd in profile_data.get("commands", []):
         if "_section" in cmd:
             continue
-        commands.append(_lower_command(cmd, dictionary, no_idiom,
-                                       infos.append, warnings.append))
+        commands.append(_lower_command(cmd, dictionary, no_idiom, _info, _warn))
     return ({"profile": {"id": profile_data.get("id"),
                          "name": profile_data.get("name", "Generated Profile")},
              "commands": commands},
@@ -147,6 +162,7 @@ def _lower_action(action, dictionary, trigger, warn):
         rec["duration"] = action.get("duration", 0.5)
         return rec
     if a_type == "Say":
+        _check_authored_text(action.get("text"), trigger, a_type, "'text'")
         rec["text"] = action.get("text", "")
         rec["volume"] = action.get("volume", 100)
         rec["rate"] = action.get("rate", 0)
@@ -162,12 +178,21 @@ def _lower_action(action, dictionary, trigger, warn):
         variable = action.get("variable")
         if not isinstance(variable, str) or not variable:
             _fail(trigger, "'SetDecimal' requires a non-empty string 'variable'")
+        _check_authored_text(variable, trigger, a_type, "'variable'")
+        value = action.get("value")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            _fail(trigger, "'SetDecimal' requires a numeric 'value' (got %r)"
+                  % (value,))
+        if not math.isfinite(value):
+            _fail(trigger, "'SetDecimal' requires a finite 'value' (got %r)"
+                  % (value,))
         rec["targetVariable"] = variable
-        rec["value"] = action.get("value")  # emit_profile hard-validates numeric/finite
+        rec["value"] = value
         return rec
     if a_type == "Write":
         if not isinstance(action.get("text"), str):
             _fail(trigger, "'Write' requires a string 'text' (empty string is legal)")
+        _check_authored_text(action["text"], trigger, a_type, "'text'")
         rec["text"] = action["text"]
         return rec
     if a_type == "SetText":
@@ -176,6 +201,8 @@ def _lower_action(action, dictionary, trigger, warn):
             _fail(trigger, "'SetText' requires a non-empty string 'variable'")
         if not isinstance(action.get("value"), str):
             _fail(trigger, "'SetText' requires a string 'value' (empty string is legal)")
+        _check_authored_text(variable, trigger, a_type, "'variable'")
+        _check_authored_text(action["value"], trigger, a_type, "'value'")
         rec["targetVariable"] = variable
         rec["value"] = action["value"]
         return rec
@@ -186,6 +213,7 @@ def _lower_action(action, dictionary, trigger, warn):
         if not isinstance(action.get("value"), bool):
             _fail(trigger, "'SetBoolean' requires a boolean 'value' (true or false; "
                            "got %r)" % (action.get("value"),))
+        _check_authored_text(variable, trigger, a_type, "'variable'")
         rec["targetVariable"] = variable
         rec["value"] = action["value"]
         return rec
@@ -197,6 +225,12 @@ def _lower_action(action, dictionary, trigger, warn):
         if isinstance(value, bool) or not isinstance(value, int):
             _fail(trigger, "'SetInteger' requires an integer 'value' (got %r)"
                   % (value,))
+        if not (_I32_MIN <= value <= _I32_MAX):
+            # <X> is Int32 on both the serializer and the binary slot (W5 fix wave,
+            # finding 3): out of range would import-fail in VA. Hard-fail, authored door.
+            _fail(trigger, "'SetInteger' 'value' %d is outside Int32 [%d, %d]"
+                  % (value, _I32_MIN, _I32_MAX))
+        _check_authored_text(variable, trigger, a_type, "'variable'")
         rec["targetVariable"] = variable
         rec["value"] = value
         return rec
@@ -204,6 +238,7 @@ def _lower_action(action, dictionary, trigger, warn):
         if not isinstance(action.get("text"), str):
             _fail(trigger, "'QuickInput' requires a string 'text' (empty string is "
                            "legal)")
+        _check_authored_text(action["text"], trigger, a_type, "'text'")
         rec["text"] = action["text"]
         if "per_key_delay" in action:
             delay = action["per_key_delay"]
@@ -281,6 +316,20 @@ def _lower_keys(keys, dictionary, warn):
 
 def _fail(trigger, msg):
     raise LoweringError("Command '%s': %s" % (trigger, msg))
+
+
+_I32_MIN, _I32_MAX = -(2 ** 31), 2 ** 31 - 1
+
+
+def _check_authored_text(value, trigger, a_type, field):
+    """AUTHORED payload strings hard-fail on XML-1.0-illegal control characters (the
+    W5 door split, finding 4: an author still gets exit 1; only DECODED degeneracies
+    get the emit-side warn-and-drop)."""
+    if isinstance(value, str):
+        m = _XML_ILLEGAL.search(value)
+        if m is not None:
+            _fail(trigger, "'%s' %s contains control character U+%04X - illegal in "
+                           "XML 1.0" % (a_type, field, ord(m.group(0))))
 
 
 # --- the idiom compiler ----------------------------------------------------------------

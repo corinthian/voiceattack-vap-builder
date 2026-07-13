@@ -44,13 +44,13 @@ def main(argv=None):
         return 1
 
     try:
-        xml, warnings = emit(model, names.load())
+        # Warnings stream as they occur so everything accumulated before a hard-fail
+        # is already printed when the ERROR line lands (W5 fix wave, finding 4).
+        xml, warnings = emit(model, names.load(),
+                             warn=lambda w: print("WARNING: %s" % w, file=sys.stderr))
     except EmitError as e:
         print("ERROR: %s" % e, file=sys.stderr)
         return 1
-
-    for w in warnings:
-        print("WARNING: %s" % w, file=sys.stderr)
 
     with open(output, "w", encoding="utf-8") as f:
         f.write(xml)

@@ -181,10 +181,15 @@ class Row2RoundTripTest(unittest.TestCase):
     vap2, and require record equality with what was fed — both doors (schema records
     directly, and the simple authoring format through the lowering layer)."""
 
-    STRIP = {"offset", "head", "guid", "source", "index", "indentLevel"}
+    STRIP = {"offset", "head", "guid", "index", "indentLevel"}
 
     def normalize(self, action):
         out = {k: v for k, v in action.items() if k not in self.STRIP}
+        # "source" is stripped ONLY as the XML-path provenance marker — a semantic
+        # binary value-source label ("random"/"arithmetic"/...) must survive into
+        # the comparison (W5 fix wave, finding 6; the key rename is queued for W6).
+        if out.get("source") == "xml":
+            del out["source"]
         at = out.get("actionType")
         if isinstance(at, dict):
             out["actionType"] = {k: v for k, v in at.items() if k != "confidence"}

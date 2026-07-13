@@ -198,6 +198,52 @@ class Row2AuthoringVerbTest(unittest.TestCase):
             {"type": "SetSmallInt", "variable": "v", "value": 1}]})
         self.assertIn("Unknown action type 'SetSmallInt' - skipped", warnings)
 
+    def test_authored_int32_bounds_hard_fail(self):
+        # W5 fix wave finding 3, authored door: exit-1 class, value named.
+        for value in (2147483648, -2147483649):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(LoweringError,
+                                            r"%d.*outside Int32" % value):
+                    lower({"commands": [{"trigger": "t", "actions": [
+                        {"type": "SetInteger", "variable": "v", "value": value}]}]})
+
+    def test_authored_int32_boundaries_accepted(self):
+        cmd, _, warnings = one_command({"trigger": "t", "actions": [
+            {"type": "SetInteger", "variable": "v", "value": 2147483647},
+            {"type": "SetInteger", "variable": "w", "value": -2147483648}]})
+        self.assertEqual(warnings, [])
+        self.assertEqual([a["value"] for a in cmd["actions"]],
+                         [2147483647, -2147483648])
+
+    def test_authored_control_chars_hard_fail(self):
+        # W5 door split: an AUTHOR typing a control character still gets exit 1.
+        cases = [
+            {"type": "Say", "text": "hi\x08"},
+            {"type": "Write", "text": "a\x00b"},
+            {"type": "SetDecimal", "variable": "v\x02", "value": 1},
+            {"type": "SetText", "variable": "v", "value": "x\x1b"},
+            {"type": "SetBoolean", "variable": "v\x0b", "value": True},
+            {"type": "SetInteger", "variable": "v\x7f", "value": 1},
+            {"type": "QuickInput", "text": "a\x01b"},
+        ]
+        for action in cases:
+            with self.subTest(type=action["type"]):
+                with self.assertRaisesRegex(LoweringError,
+                                            r"control character U\+00"):
+                    lower({"commands": [{"trigger": "t", "actions": [action]}]})
+
+    def test_authored_setdecimal_value_hard_fails(self):
+        # Moved from the emit side by the W5 door split: authored SetDecimal values
+        # validate at lowering time now.
+        for value, pattern in ((float("nan"), "finite"),
+                               ("abc", "numeric 'value'"),
+                               (True, "numeric 'value'"),
+                               (None, "numeric 'value'")):
+            with self.subTest(value=repr(value)):
+                with self.assertRaisesRegex(LoweringError, pattern):
+                    lower({"commands": [{"trigger": "t", "actions": [
+                        {"type": "SetDecimal", "variable": "v", "value": value}]}]})
+
     def test_row2_authoring_hard_fails(self):
         cases = [
             ({"type": "SetText", "value": "x"}, "non-empty string 'variable'"),
