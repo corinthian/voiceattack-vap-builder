@@ -308,5 +308,32 @@ class DarkTypeParameterlessFixpointTest(unittest.TestCase):
                          [_normalize(a) for a in j2["commands"][0]["actions"]])
 
 
+class SetClipboardFixpointTest(unittest.TestCase):
+    """W6 gate closure: SetClipboard (24) wired to emit. Its XML carrier is Context=text,
+    identical to Write (dictionary ground truth, Probe B) — round-trip-verified so the
+    audit's one pending emit-ready entry is honestly closed, not parked."""
+
+    def test_setclipboard_fixpoint(self):
+        model = {"profile": {"id": None, "name": "Clip"},
+                 "commands": [{"phrase": "copy marker", "category": "w6", "actions": [
+                     {"actionType": {"code": 24, "name": "SetClipboard"},
+                      "text": "clip-marker {TXT:x}"}]}]}
+        xml, warnings = emit(model, GEN2_DICT)
+        self.assertEqual(warnings, [])
+        self.assertIn("<ActionType>SetClipboard</ActionType>", xml)
+        self.assertIn("<Context>clip-marker {TXT:x}</Context>", xml)
+
+        j1 = vap2.decode_bytes(xml.encode("utf-8"))
+        act = j1["commands"][0]["actions"][0]
+        self.assertEqual(act["actionType"]["name"], "SetClipboard")
+        self.assertEqual(act["text"], "clip-marker {TXT:x}")
+
+        xml2, warnings2 = emit(schema_input.parse(j1), GEN2_DICT)
+        self.assertEqual(warnings2, [])
+        j2 = vap2.decode_bytes(xml2.encode("utf-8"))
+        self.assertEqual([_normalize(a) for a in j1["commands"][0]["actions"]],
+                         [_normalize(a) for a in j2["commands"][0]["actions"]])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

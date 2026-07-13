@@ -37,7 +37,7 @@ class EmitError(Exception):
 # statement only; every code/name/index below resolves through the dictionary at runtime.
 WIRED = {
     "PressKey", "KeyDown", "KeyUp", "KeyToggle", "MouseAction", "Pause", "Say",
-    "Launch", "Write", "SetDecimal",
+    "Launch", "Write", "SetClipboard", "SetDecimal",
     # Coverage row 2 (plan W5; carriers per WP-B's decode bindings + the verbatim s4
     # export samples): SetText->TextSet, SetBoolean->BooleanSet (literal modes only),
     # SetInteger->IntSet (LITERAL VALUE MODE ONLY), QuickInput->FreeType, and
@@ -53,6 +53,29 @@ WIRED = {
     "DictationMode", "StopDictation", "ClearDictationBuffer",
     "StartListening", "StopListening",
 }
+
+# Canonicals that emit AS another canonical's XML string (audit truth, plan W6).
+# SetSmallInt is WIRED but normalizes to IntSet on emit (VA2 merge — see _action_xml);
+# it never emits its own "ConditionSet" string. The audit resolves emitted XML through
+# this map so ConditionSet is not falsely credited as emitted.
+EMIT_NORMALIZED = {"SetSmallInt": "SetInteger"}
+
+# XML ActionType strings the dictionary knows but gen2 deliberately does NOT emit, each
+# with a standing reason (audit parked-awareness, plan W6). This is DISTINCT from pending:
+# a pending entry is emit-ready and should be adopted; a DEFERRED entry is parked by
+# design. SetClipboard is deliberately absent — it is emit-ready, so the audit surfaces
+# it as pending until it is wired or explicitly parked (a ruling, not a silent bury).
+DEFERRED_XML = {
+    "ExecuteCommand": "by-GUID cross-reference (name->GUID resolution) - future release",
+    "KillCommand": "by-GUID cross-reference (name->GUID resolution) - future release",
+    "WhileStart": "While-loop emission parked (plan D4) - future release",
+    "WhileEnd": "While-loop emission parked (plan D4) - future release",
+    "PauseVariable": "decoder parks operands (no round-trip coverage) - future release",
+    "ExitCommand": "decoder parks operands (no round-trip coverage) - future release",
+    "ConditionSet": "legacy VA1 Small-Int set; SetSmallInt normalizes to IntSet on emit "
+                    "(VA2 merge) - decode-only, never emitted",
+}
+
 # Key-list family (shared template, Duration 0 by definition for the last three).
 _KEY_FAMILY = {"PressKey", "KeyDown", "KeyUp", "KeyToggle"}
 # Condition-family (block-structural): refusal granularity is the whole command.
@@ -356,7 +379,7 @@ def _payload_defect(canonical, rec):
         else:
             return "requires a numeric 'value' (got %r)" % (value,)
         return clean(variable, "'targetVariable'")
-    if canonical == "Write":
+    if canonical in ("Write", "SetClipboard"):
         if not isinstance(rec.get("text"), str):
             return "requires a string 'text' (got %r)" % (rec.get("text"),)
         return clean(rec["text"], "'text'")
@@ -563,6 +586,10 @@ def _action_xml(plan, dictionary, warn):
         x = _int_str(rec.get("volume"), 100, "Say volume", warn)
         y = _int_str(rec.get("rate"), 0, "Say rate", warn)
     elif canonical == "Write":
+        context = escape(rec["text"])
+    elif canonical == "SetClipboard":
+        # SetClipboard (24): text carrier is Context, identical to Write (dictionary
+        # note; binary code + layout closed by Probe B). No other field.
         context = escape(rec["text"])
     elif canonical == "SetBoolean":
         # BooleanSet (s4 samples, both polarities): target Context, value InputMode

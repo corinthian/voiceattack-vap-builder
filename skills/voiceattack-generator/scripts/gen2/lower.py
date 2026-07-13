@@ -38,7 +38,7 @@ _CONDITION_KEYS = {"valueType", "operator", "leftOperand", "value"}
 _CONDITION_TYPES = {"BeginCondition", "ElseIf", "Else", "EndCondition"}
 _KEY_TYPES = {"PressKey", "KeyDown", "KeyUp", "KeyToggle"}
 _SIMPLE_TYPES = _KEY_TYPES | _CONDITION_TYPES | {
-    "MouseAction", "Pause", "Say", "SetDecimal", "Write",
+    "MouseAction", "Pause", "Say", "SetDecimal", "Write", "SetClipboard",
     # W5 row-2 authoring verbs. NO SetSmallInt here: it is legacy-in (decoded
     # profiles), never authored-out — VA2 merged Small Int into Integer.
     "SetText", "SetBoolean", "SetInteger", "QuickInput",
@@ -192,9 +192,9 @@ def _lower_action(action, dictionary, trigger, warn):
         rec["targetVariable"] = variable
         rec["value"] = value
         return rec
-    if a_type == "Write":
+    if a_type in ("Write", "SetClipboard"):
         if not isinstance(action.get("text"), str):
-            _fail(trigger, "'Write' requires a string 'text' (empty string is legal)")
+            _fail(trigger, "'%s' requires a string 'text' (empty string is legal)" % a_type)
         _check_authored_text(action["text"], trigger, a_type, "'text'")
         rec["text"] = action["text"]
         return rec

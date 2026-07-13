@@ -1379,6 +1379,43 @@ class AuditGateTest(unittest.TestCase):
         report = tools.audit(d, decoder_mod, gen_mod, gen_src)
         self.assertEqual(report["fail_count"], 0, report)
 
+    def test_action_type_parked_vs_pending(self):
+        """W6: the audit is gen2-aware and parked-aware. Deliberately-deferred types
+        report as PARKED; a dictionary type that is emit-ready but neither emitted nor
+        parked reports as PENDING (a real adopt-or-park decision), never buried."""
+        import importlib.util
+        tools_path = os.path.join(ROOT, "schema", "dictionary_tools.py")
+        gen_path = os.path.join(ROOT, "skills", "voiceattack-generator", "scripts", "vap_generator.py")
+        if not (os.path.exists(tools_path) and os.path.exists(gen_path)):
+            self.skipTest("audit tooling or generator missing")
+        spec = importlib.util.spec_from_file_location("dictionary_tools", tools_path)
+        tools = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(tools)
+        d = tools.load_dict()
+        decoder_mod = tools.load_tool_module(__import__("pathlib").Path(
+            os.path.join(SCRIPTS, "vap2", "names.py")))
+        gen_mod = tools.load_tool_module(__import__("pathlib").Path(gen_path))
+        with open(gen_path) as f:
+            gen_src = f.read()
+        at = tools.audit(d, decoder_mod, gen_mod, gen_src)["action_types"]
+
+        # No orphan: everything gen2 emits exists in the dictionary.
+        self.assertEqual(at["orphans_generator_handles_not_in_dict"], [])
+        # The five shipped dark types are emitted; the SetSmallInt->IntSet normalization
+        # means its decode-only "ConditionSet" string is NOT credited as emitted.
+        self.assertIn("StartDictation", at["emitted_by_gen2"])
+        self.assertIn("IntSet", at["emitted_by_gen2"])
+        self.assertNotIn("ConditionSet", at["emitted_by_gen2"])
+        # Deliberately-deferred types are parked, not pending.
+        for parked in ("ExecuteCommand", "KillCommand", "WhileStart", "WhileEnd",
+                       "PauseVariable", "ExitCommand", "ConditionSet"):
+            self.assertIn(parked, at["parked_deferred_by_design"])
+            self.assertNotIn(parked, at["pending_dict_xml_types_not_handled_by_generator"])
+        # W6 gate closed: SetClipboard (the one formerly-pending emit-ready type) is now
+        # wired, so nothing emit-ready is left pending.
+        self.assertIn("SetClipboard", at["emitted_by_gen2"])
+        self.assertEqual(at["pending_dict_xml_types_not_handled_by_generator"], [])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

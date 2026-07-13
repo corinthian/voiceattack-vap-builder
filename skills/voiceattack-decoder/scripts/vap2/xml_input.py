@@ -164,9 +164,10 @@ def _parse_action(act_el, index, dictionary):
         base["block"] = {"pairing": _local_int(act_el, "ConditionPairing")}
         return base
 
-    # Write (23): text carrier is Context; present-but-empty binds "" (ground truth
-    # 4.8/4.9), missing element omits the key (binary _opt_string absence rule).
-    if code == 23:
+    # Write (23) and SetClipboard (24): text carrier is Context; present-but-empty binds
+    # "" (ground truth 4.8/4.9), missing element omits the key (binary _opt_string
+    # absence rule). Both are m[6]-string actions with the identical XML carrier.
+    if code in (23, 24):
         text = _local_text_or_empty(act_el, "Context")
         if text is not None:
             base["text"] = text
