@@ -35,7 +35,10 @@ _CONDITION_KEYS = {"valueType", "operator", "leftOperand", "value"}
 _CONDITION_TYPES = {"BeginCondition", "ElseIf", "Else", "EndCondition"}
 _KEY_TYPES = {"PressKey", "KeyDown", "KeyUp", "KeyToggle"}
 _SIMPLE_TYPES = _KEY_TYPES | _CONDITION_TYPES | {
-    "MouseAction", "Pause", "Say", "SetDecimal", "Write"}
+    "MouseAction", "Pause", "Say", "SetDecimal", "Write",
+    # W5 row-2 authoring verbs. NO SetSmallInt here: it is legacy-in (decoded
+    # profiles), never authored-out — VA2 merged Small Int into Integer.
+    "SetText", "SetBoolean", "SetInteger", "QuickInput"}
 
 _GROUP_RE = re.compile(r"\[([^\[\]]*)\]")
 _DISPATCH_OPERAND = "{LASTSPOKENCMD}"
@@ -166,6 +169,49 @@ def _lower_action(action, dictionary, trigger, warn):
         if not isinstance(action.get("text"), str):
             _fail(trigger, "'Write' requires a string 'text' (empty string is legal)")
         rec["text"] = action["text"]
+        return rec
+    if a_type == "SetText":
+        variable = action.get("variable")
+        if not isinstance(variable, str) or not variable:
+            _fail(trigger, "'SetText' requires a non-empty string 'variable'")
+        if not isinstance(action.get("value"), str):
+            _fail(trigger, "'SetText' requires a string 'value' (empty string is legal)")
+        rec["targetVariable"] = variable
+        rec["value"] = action["value"]
+        return rec
+    if a_type == "SetBoolean":
+        variable = action.get("variable")
+        if not isinstance(variable, str) or not variable:
+            _fail(trigger, "'SetBoolean' requires a non-empty string 'variable'")
+        if not isinstance(action.get("value"), bool):
+            _fail(trigger, "'SetBoolean' requires a boolean 'value' (true or false; "
+                           "got %r)" % (action.get("value"),))
+        rec["targetVariable"] = variable
+        rec["value"] = action["value"]
+        return rec
+    if a_type == "SetInteger":
+        variable = action.get("variable")
+        if not isinstance(variable, str) or not variable:
+            _fail(trigger, "'SetInteger' requires a non-empty string 'variable'")
+        value = action.get("value")
+        if isinstance(value, bool) or not isinstance(value, int):
+            _fail(trigger, "'SetInteger' requires an integer 'value' (got %r)"
+                  % (value,))
+        rec["targetVariable"] = variable
+        rec["value"] = value
+        return rec
+    if a_type == "QuickInput":
+        if not isinstance(action.get("text"), str):
+            _fail(trigger, "'QuickInput' requires a string 'text' (empty string is "
+                           "legal)")
+        rec["text"] = action["text"]
+        if "per_key_delay" in action:
+            delay = action["per_key_delay"]
+            if (isinstance(delay, bool) or not isinstance(delay, (int, float))
+                    or delay < 0):
+                _fail(trigger, "'QuickInput' requires a non-negative numeric "
+                               "'per_key_delay' (got %r)" % (delay,))
+            rec["perKeyDelay"] = delay
         return rec
 
     # Condition markers.

@@ -576,8 +576,9 @@ class RefusalTest(unittest.TestCase):
         return xml.count("<Command>"), len(CHUNK_RE.findall(xml)), warnings
 
     def test_unwired_type_drops_action_only(self):
+        # SetClipboard: still row-3 (unwired) after the W5 row-2 wave.
         n_cmds, n_actions, warnings = self.emit_model(
-            [rec(21, "SetText", targetVariable="x", value="y"), presskey()])
+            [rec(24, "SetClipboard", text="y"), presskey()])
         self.assertEqual((n_cmds, n_actions), (1, 1))
         self.assertEqual(len(warnings), 1)
         self.assertIn("not emit-wired", warnings[0])
@@ -656,6 +657,171 @@ class RefusalTest(unittest.TestCase):
             [rec(13, "Say", text="hi", volume=100, rate=0, voiceName="Default",
                  voiceGuid="00000000-0000-0000-0000-000000000000")])
         self.assertEqual(warnings, [])
+
+
+class Row2EmitTest(unittest.TestCase):
+    """W5 coverage row 2 (schema door). Carrier conformance is asserted against the
+    verbatim s4 export samples' FIELD VALUES (the carrier authority): TextSet
+    Context/Context2, BooleanSet Context/InputMode both polarities, IntSet
+    ConditionSetName/X with CLEAN stale slots, FreeType Context/Duration/InputMode.
+    Unevidenced value-source modes refuse loudly; SetSmallInt re-emits as IntSet
+    (sanctioned normalization, VA2 Small-Int/Integer merge)."""
+
+    def emit_one(self, record):
+        chunks, warnings = emit_chunks([record])
+        self.assertEqual(len(chunks), 1)
+        return chunks[0], warnings
+
+    def field(self, chunk, tag):
+        m = re.search(r"<%s( [^>]*)?>(.*?)</%s>" % (tag, tag), chunk, re.S)
+        return None if m is None else m.group(2)
+
+    def test_settext_conformance(self):
+        # s4_textset: Context=VxFile, Context2 (xml:space=preserve)=value.
+        chunk, warnings = self.emit_one(
+            rec(21, "SetText", targetVariable="VxFile",
+                value="TestData\\TestConsole.exe"))
+        self.assertEqual(warnings, [])
+        self.assertIn("<ActionType>TextSet</ActionType>", chunk)
+        self.assertEqual(self.field(chunk, "Context"), "VxFile")
+        self.assertIn('<Context2 xml:space="preserve">TestData\\TestConsole.exe'
+                      "</Context2>", chunk)
+
+    def test_settext_absent_value_omits_context2(self):
+        chunk, _ = self.emit_one(rec(21, "SetText", targetVariable="v"))
+        self.assertNotIn("<Context2", chunk)
+
+    def test_settext_empty_value_emits_empty_context2(self):
+        chunk, _ = self.emit_one(rec(21, "SetText", targetVariable="v", value=""))
+        self.assertIn('<Context2 xml:space="preserve"></Context2>', chunk)
+
+    def test_setboolean_true_conformance(self):
+        # s4_boolset_true: Context=addressInput, InputMode=0.
+        chunk, warnings = self.emit_one(
+            rec(36, "SetBoolean", targetVariable="addressInput", value=True))
+        self.assertEqual(warnings, [])
+        self.assertIn("<ActionType>BooleanSet</ActionType>", chunk)
+        self.assertEqual(self.field(chunk, "Context"), "addressInput")
+        self.assertEqual(self.field(chunk, "InputMode"), "0")
+
+    def test_setboolean_false_conformance(self):
+        # s4_boolset_false: Context=jumping, InputMode=1.
+        chunk, _ = self.emit_one(
+            rec(36, "SetBoolean", targetVariable="jumping", value=False))
+        self.assertEqual(self.field(chunk, "Context"), "jumping")
+        self.assertEqual(self.field(chunk, "InputMode"), "1")
+
+    def test_setinteger_conformance_clean_stale_slots(self):
+        # s4_intset: ConditionSetName (preserve)=VxRow, X=1 — and the sample's STALE
+        # Context/Context2 author strings must never be mirrored: clean elements only.
+        chunk, warnings = self.emit_one(
+            rec(37, "SetInteger", targetVariable="VxRow", value=1,
+                valueSourceMode=0))
+        self.assertEqual(warnings, [])
+        self.assertIn("<ActionType>IntSet</ActionType>", chunk)
+        self.assertIn('<ConditionSetName xml:space="preserve">VxRow'
+                      "</ConditionSetName>", chunk)
+        self.assertEqual(self.field(chunk, "X"), "1")
+        self.assertNotIn("<Context>", chunk)
+        self.assertNotIn("<Context2", chunk)
+
+    def test_quickinput_conformance(self):
+        # s4_freetype: Context={TXT:System1}, Duration=0.05, InputMode=1.
+        chunk, warnings = self.emit_one(
+            rec(40, "QuickInput", text="{TXT:System1}", perKeyDelay=0.05))
+        self.assertEqual(warnings, [])
+        self.assertIn("<ActionType>FreeType</ActionType>", chunk)
+        self.assertEqual(self.field(chunk, "Context"), "{TXT:System1}")
+        self.assertEqual(self.field(chunk, "Duration"), "0.05")
+        self.assertEqual(self.field(chunk, "InputMode"), "1")
+
+    def test_quickinput_no_delay(self):
+        chunk, _ = self.emit_one(rec(40, "QuickInput", text="abc"))
+        self.assertEqual(self.field(chunk, "Duration"), "0")
+
+    def test_setsmallint_sanctioned_normalization(self):
+        # Legacy SetSmallInt (XML ConditionSet) re-emits as IntSet, loudly.
+        chunk, warnings = self.emit_one(
+            rec(18, "SetSmallInt", targetVariable="speed", value=3))
+        self.assertIn("<ActionType>IntSet</ActionType>", chunk)
+        self.assertIn('<ConditionSetName xml:space="preserve">speed'
+                      "</ConditionSetName>", chunk)
+        self.assertEqual(self.field(chunk, "X"), "3")
+        self.assertTrue(any("sanctioned normalization" in w for w in warnings),
+                        warnings)
+
+    def test_setinteger_nonliteral_modes_refuse(self):
+        cases = [
+            rec(37, "SetInteger", targetVariable="v", valueSourceMode=1,
+                source="random", min="0", max="9"),
+            rec(37, "SetInteger", targetVariable="v", valueSourceMode=4,
+                source="another_variable", sourceVariable="w"),
+            rec(37, "SetInteger", targetVariable="v", valueSourceMode=8,
+                source="arithmetic", operand=1,
+                operation={"code": 1, "name": "minus"}),
+            rec(37, "SetInteger", targetVariable="v", valueSourceMode=5,
+                source="not_set"),
+        ]
+        for r in cases:
+            with self.subTest(mode=r.get("valueSourceMode")):
+                xml, warnings = emit(model_for([r]), DICT)
+                self.assertEqual(len(CHUNK_RE.findall(xml)), 0)
+                self.assertEqual(len(warnings), 1)
+                self.assertIn("literal value mode only", warnings[0])
+                self.assertIn("W5 export probe", warnings[0])
+
+    def test_setboolean_valuesource_refuses(self):
+        r = rec(36, "SetBoolean", targetVariable="v",
+                valueSource={"mode": 2, "decoded": False, "note": "n"})
+        xml, warnings = emit(model_for([r]), DICT)
+        self.assertEqual(len(CHUNK_RE.findall(xml)), 0)
+        self.assertIn("no evidenced XML carrier", warnings[0])
+
+    def test_fields_undecoded_records_refuse(self):
+        # Binary SetSmallInt/QuickInput records decode as fieldsDecoded: false —
+        # nothing to rebuild; refusal, never a hard fail.
+        for code, name in ((18, "SetSmallInt"), (40, "QuickInput")):
+            with self.subTest(name=name):
+                r = {"actionType": {"code": code, "name": name},
+                     "fieldsDecoded": False, "members": [0] * 34, "note": "parked"}
+                xml, warnings = emit(model_for([r]), DICT)
+                self.assertEqual(len(CHUNK_RE.findall(xml)), 0)
+                self.assertIn("fieldsDecoded", warnings[0])
+
+    def test_row2_hard_fails(self):
+        cases = [
+            (rec(21, "SetText", targetVariable="", value="x"),
+             "non-empty string 'targetVariable'"),
+            (rec(21, "SetText", targetVariable="v", value=5),
+             "string 'value'"),
+            (rec(36, "SetBoolean", targetVariable="v", value="yes"),
+             "boolean 'value'"),
+            (rec(36, "SetBoolean", value=True),
+             "non-empty string 'targetVariable'"),
+            (rec(37, "SetInteger", targetVariable="v", value="7"),
+             "integer 'value'"),
+            (rec(37, "SetInteger", targetVariable="v", value=True),
+             "integer 'value'"),
+            (rec(18, "SetSmallInt", targetVariable="v"),
+             "integer 'value'"),
+            (rec(40, "QuickInput"),
+             "string 'text'"),
+        ]
+        for r, pattern in cases:
+            with self.subTest(pattern=pattern):
+                with self.assertRaisesRegex(EmitError, pattern):
+                    emit(model_for([r]), DICT)
+
+    def test_row2_control_chars_hard_fail(self):
+        cases = [rec(21, "SetText", targetVariable="v\x01", value="x"),
+                 rec(21, "SetText", targetVariable="v", value="x\x00"),
+                 rec(36, "SetBoolean", targetVariable="v\x02", value=True),
+                 rec(37, "SetInteger", targetVariable="v\x03", value=1),
+                 rec(40, "QuickInput", text="a\x1fb")]
+        for r in cases:
+            with self.subTest(type=r["actionType"]["name"]):
+                with self.assertRaisesRegex(EmitError, "control character"):
+                    emit(model_for([r]), DICT)
 
 
 class SchemaInputTest(unittest.TestCase):
@@ -871,7 +1037,7 @@ class CliSmokeTest(unittest.TestCase):
 
     def test_warnings_exit_2_with_output(self):
         code, wrote, err = self.run_cli(
-            doc_for([rec(21, "SetText", targetVariable="x", value="y"), presskey()]))
+            doc_for([rec(24, "SetClipboard", text="y"), presskey()]))
         self.assertEqual((code, wrote), (2, True))
         self.assertIn("WARNING", err)
 

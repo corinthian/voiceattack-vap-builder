@@ -38,6 +38,11 @@ class EmitError(Exception):
 WIRED = {
     "PressKey", "KeyDown", "KeyUp", "KeyToggle", "MouseAction", "Pause", "Say",
     "Launch", "Write", "SetDecimal",
+    # Coverage row 2 (plan W5; carriers per WP-B's decode bindings + the verbatim s4
+    # export samples): SetText->TextSet, SetBoolean->BooleanSet (literal modes only),
+    # SetInteger->IntSet (LITERAL VALUE MODE ONLY), QuickInput->FreeType, and
+    # SetSmallInt normalized to IntSet (VA2 merge ruling — see _action_xml).
+    "SetText", "SetBoolean", "SetInteger", "SetSmallInt", "QuickInput",
     "BeginCondition", "ElseIf", "Else", "EndCondition",
 }
 # Key-list family (shared template, Duration 0 by definition for the last three).
@@ -128,6 +133,51 @@ def route_actions(cmd, dictionary, warn):
             warn("Command '%s': action %d '%s' is not emit-wired this wave - "
                  "emitting nothing for it (contract §3)" % (phrase, idx, canonical))
             continue
+
+        if rec.get("fieldsDecoded") is False:
+            # Recognized type, operands undecoded (binary parked layouts, e.g. every
+            # binary SetSmallInt/QuickInput record) — nothing to rebuild from.
+            warn("Command '%s': action %d '%s' decoded without operands "
+                 "(fieldsDecoded: false) - emitting nothing for it (contract §3)"
+                 % (phrase, idx, canonical))
+            continue
+
+        if canonical == "SetBoolean" and "valueSource" in rec:
+            # Binary modes 2-6 (toggle/copy/random/saved/clear): no proven XML emit
+            # carrier for non-literal sources (W5 tasking item 2).
+            warn("Command '%s': action %d SetBoolean value-source mode %r has no "
+                 "evidenced XML carrier (modes 2-6 unsampled) - emitting nothing for "
+                 "it (contract §3; W5 export probe)" % (phrase, idx,
+                 (rec.get("valueSource") or {}).get("mode")))
+            continue
+
+        if canonical == "SetInteger":
+            unevidenced = [k for k in ("sourceVariable", "min", "max",
+                                       "operation", "valueSource") if k in rec]
+            # NAME COLLISION GUARD: "source" is BOTH the XML-path provenance
+            # annotation ("xml") and the binary record's semantic value-source label
+            # ("random"/"arithmetic"/...). Only the semantic form marks a mode.
+            if rec.get("source") not in (None, "xml"):
+                unevidenced.append("source")
+            mode = rec.get("valueSourceMode")
+            if unevidenced or mode not in (None, 0):
+                # LITERAL VALUE MODE ONLY (W5 tasking item 3): the s4 IntSet sample
+                # proves ConditionSetName/X for a literal value and nothing else;
+                # random/variable/arithmetic operand carriers are unevidenced.
+                warn("Command '%s': action %d SetInteger value-source mode %r "
+                     "(record keys %s) has no evidenced XML carrier - literal value "
+                     "mode only; emitting nothing for it (contract §3; pending the "
+                     "W5 export probe)" % (phrase, idx, mode,
+                                           unevidenced or ["valueSourceMode"]))
+                continue
+
+        if canonical == "SetSmallInt":
+            # SANCTIONED NORMALIZATION (plan row-2 note): VA2 merged Small Int into
+            # Integer — this record re-emits as IntSet and will re-decode as
+            # SetInteger. Loud by design; the name change is ruling, not drift.
+            warn("Command '%s': action %d SetSmallInt re-emitted as IntSet per the "
+                 "VA2 Small-Int/Integer merge (sanctioned normalization) - it will "
+                 "re-decode as SetInteger" % (phrase, idx))
 
         if canonical == "MouseAction" and _mouse_context(rec, dictionary) is None:
             warn("Command '%s': action %d MouseAction context %r / action %r is not in the "
@@ -252,6 +302,39 @@ def _validate(plans, phrase, dictionary):
         if canonical == "Launch":
             for field in ("executablePath", "arguments", "workingDirectory"):
                 check_clean(rec.get(field), canonical, field)
+            continue
+        if canonical == "SetText":
+            variable = rec.get("targetVariable")
+            if not isinstance(variable, str) or not variable:
+                fail("'SetText' requires a non-empty string 'targetVariable'")
+            if "value" in rec and not isinstance(rec["value"], str):
+                fail("'SetText' requires a string 'value' when present (got %r)"
+                     % (rec["value"],))
+            check_clean(variable, canonical, "targetVariable")
+            check_clean(rec.get("value"), canonical, "value")
+            continue
+        if canonical == "SetBoolean":
+            variable = rec.get("targetVariable")
+            if not isinstance(variable, str) or not variable:
+                fail("'SetBoolean' requires a non-empty string 'targetVariable'")
+            if not isinstance(rec.get("value"), bool):
+                fail("'SetBoolean' requires a boolean 'value' (got %r)"
+                     % (rec.get("value"),))
+            check_clean(variable, canonical, "targetVariable")
+            continue
+        if canonical in ("SetInteger", "SetSmallInt"):
+            variable = rec.get("targetVariable")
+            if not isinstance(variable, str) or not variable:
+                fail("'%s' requires a non-empty string 'targetVariable'" % canonical)
+            value = rec.get("value")
+            if isinstance(value, bool) or not isinstance(value, int):
+                fail("'%s' requires an integer 'value' (got %r)" % (canonical, value))
+            check_clean(variable, canonical, "targetVariable")
+            continue
+        if canonical == "QuickInput":
+            if not isinstance(rec.get("text"), str):
+                fail("'QuickInput' requires a string 'text' (empty string is legal)")
+            check_clean(rec["text"], canonical, "text")
             continue
         if canonical not in _STRUCTURAL:
             continue
@@ -387,11 +470,23 @@ def _action_xml(plan, dictionary, warn):
         return _decimal_set_xml(rec, ordinal, indent)
     if canonical == "Launch":
         return _launch_xml(rec, ordinal, indent, warn)
+    if canonical == "SetText":
+        return _text_set_xml(rec, ordinal, indent)
+    if canonical in ("SetInteger", "SetSmallInt"):
+        # SANCTIONED NORMALIZATION (plan row-2 note / W5 tasking item 4): VA2 merged
+        # Small Int into Integer, so a decoded SetSmallInt record re-emits with the
+        # IntSet carriers and re-decodes as SetInteger. This canonical-name change
+        # across the round trip is by ruling, not drift — fixpoint comparisons over
+        # SmallInt-bearing profiles must treat it as sanctioned when those profiles
+        # graduate to the fixture set.
+        xml_type = dictionary.xml_action_type(dictionary.code_for_name("SetInteger"))
+        return _int_set_xml(xml_type, rec, ordinal, indent)
 
     duration_str = "0"
     context = ""
     x = y = z = "0"
     dc1 = "0"
+    input_mode = "0"
     key_codes_xml = "<KeyCodes/>"
 
     if canonical in _KEY_FAMILY:
@@ -407,6 +502,19 @@ def _action_xml(plan, dictionary, warn):
         y = _int_str(rec.get("rate"), 0, "Say rate", warn)
     elif canonical == "Write":
         context = escape(rec["text"])
+    elif canonical == "SetBoolean":
+        # BooleanSet (s4 samples, both polarities): target Context, value InputMode
+        # (0=True, 1=False — the binary m[14] enum exactly). Non-literal modes were
+        # refused in routing.
+        context = escape(rec["targetVariable"])
+        input_mode = "0" if rec["value"] else "1"
+    elif canonical == "QuickInput":
+        # FreeType (s4 sample): text Context (variable tokens legal), Duration =
+        # perKeyDelay seconds (WP-B's coined name; W7 docs list). InputMode reads 1
+        # on both banked samples — semantics unverified, mirrored verbatim.
+        context = escape(rec["text"])
+        duration_str = _format_duration(rec.get("perKeyDelay", 0), warn)
+        input_mode = "1"
     elif canonical == "MouseAction":
         context = _mouse_context(rec, dictionary)
         if context in dictionary.scroll_context_codes:
@@ -427,7 +535,7 @@ def _action_xml(plan, dictionary, warn):
             duration_str = _format_duration(rec["clickDuration"], warn)
 
     return _ordinary_xml(xml_type, ordinal, indent, duration_str, key_codes_xml,
-                         context, x, y, z, dc1)
+                         context, x, y, z, dc1, input_mode)
 
 
 def _key_codes_xml(key_codes, warn):
@@ -501,7 +609,7 @@ def _int_str(value, default, label, warn):
 # --- templates (verbatim from vap_generator.py 2.0.0 — ground truth, do not edit) ----
 
 def _ordinary_xml(action_type, ordinal, indent_level, duration_str, key_codes_xml,
-                  context, x, y, z, decimal_context1):
+                  context, x, y, z, decimal_context1, input_mode="0"):
     action_id = new_guid()
     return f"""        <CommandAction>
           <PairingSet>false</PairingSet>
@@ -521,7 +629,7 @@ def _ordinary_xml(action_type, ordinal, indent_level, duration_str, key_codes_xm
           <X>{x}</X>
           <Y>{y}</Y>
           <Z>{z}</Z>
-          <InputMode>0</InputMode>
+          <InputMode>{input_mode}</InputMode>
           <ConditionPairing>0</ConditionPairing>
           <ConditionGroup>0</ConditionGroup>
           <ConditionStartOperator>0</ConditionStartOperator>
@@ -655,6 +763,95 @@ def _block_close_xml(action_type, ordinal, indent_level, pairing, group):
           <InputMode>0</InputMode>
           <ConditionPairing>{pairing}</ConditionPairing>
           <ConditionGroup>{group}</ConditionGroup>
+          <ConditionStartOperator>0</ConditionStartOperator>
+          <ConditionStartValue>0</ConditionStartValue>
+          <ConditionStartValueType>0</ConditionStartValueType>
+          <ConditionStartType>0</ConditionStartType>
+          <DecimalContext1>0</DecimalContext1>
+          <DecimalContext2>0</DecimalContext2>
+          <DateContext1>0001-01-01T00:00:00</DateContext1>
+          <DateContext2>0001-01-01T00:00:00</DateContext2>
+          <Disabled>false</Disabled>
+          <RandomSounds/>
+          <ConditionExpressions/>
+        </CommandAction>"""
+
+
+def _text_set_xml(rec, ordinal, indent_level):
+    """TextSet (s4_textset sample carriers): target variable in Context, value in
+    Context2 (xml:space=preserve). Present-vs-absent honored both directions: the
+    Context2 element is emitted only when the record carries a value key (a decoded
+    present-but-empty value emits an EMPTY Context2), mirroring the decode binding."""
+    action_id = new_guid()
+    context = escape(rec["targetVariable"])
+    extra = ""
+    if "value" in rec:
+        extra = f"\n          <Context2 xml:space=\"preserve\">{escape(rec['value'])}</Context2>"
+    return f"""        <CommandAction>
+          <PairingSet>false</PairingSet>
+          <PairingSetElse>false</PairingSetElse>
+          <Ordinal>{ordinal}</Ordinal>
+          <ConditionMet xsi:nil="true"/>
+          <IndentLevel>{indent_level}</IndentLevel>
+          <ConditionSkip>false</ConditionSkip>
+          <IsSuffixAction>false</IsSuffixAction>
+          <DecimalTransient1>0</DecimalTransient1>
+          <Id>{action_id}</Id>
+          <ActionType>TextSet</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes/>
+          <Context>{context}</Context>{extra}
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>0</InputMode>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <ConditionStartOperator>0</ConditionStartOperator>
+          <ConditionStartValue>0</ConditionStartValue>
+          <ConditionStartValueType>0</ConditionStartValueType>
+          <ConditionStartType>0</ConditionStartType>
+          <DecimalContext1>0</DecimalContext1>
+          <DecimalContext2>0</DecimalContext2>
+          <DateContext1>0001-01-01T00:00:00</DateContext1>
+          <DateContext2>0001-01-01T00:00:00</DateContext2>
+          <Disabled>false</Disabled>
+          <RandomSounds/>
+          <ConditionExpressions/>
+        </CommandAction>"""
+
+
+def _int_set_xml(xml_type, rec, ordinal, indent_level):
+    """IntSet (s4_intset sample carriers): target variable in ConditionSetName
+    (xml:space=preserve), literal value in X — literal mode only (routing refused the
+    rest). The real-world sample carries STALE author strings in Context/Context2 (the
+    dictionary's stale-slot hazard); this template emits clean elements — no Context,
+    no Context2 — on the proven DecimalSet skeleton, never mirroring stale slots.
+    Serves SetInteger AND SetSmallInt (sanctioned normalization, see _action_xml)."""
+    action_id = new_guid()
+    variable = escape(rec["targetVariable"])
+    return f"""        <CommandAction>
+          <PairingSet>false</PairingSet>
+          <PairingSetElse>false</PairingSetElse>
+          <Ordinal>{ordinal}</Ordinal>
+          <ConditionMet xsi:nil="true"/>
+          <IndentLevel>{indent_level}</IndentLevel>
+          <ConditionSkip>false</ConditionSkip>
+          <IsSuffixAction>false</IsSuffixAction>
+          <DecimalTransient1>0</DecimalTransient1>
+          <Id>{action_id}</Id>
+          <ActionType>{xml_type}</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes/>
+          <X>{rec["value"]}</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>0</InputMode>
+          <ConditionSetName xml:space="preserve">{variable}</ConditionSetName>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
           <ConditionStartOperator>0</ConditionStartOperator>
           <ConditionStartValue>0</ConditionStartValue>
           <ConditionStartValueType>0</ConditionStartValueType>

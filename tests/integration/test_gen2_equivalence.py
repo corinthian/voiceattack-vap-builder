@@ -176,5 +176,75 @@ class MoveClickDurationRoundTripTest(unittest.TestCase):
         self.assertEqual(action.get("y"), 444)
 
 
+class Row2RoundTripTest(unittest.TestCase):
+    """W5 coverage row 2: emit each newly wired type via gen2, decode the XML via
+    vap2, and require record equality with what was fed — both doors (schema records
+    directly, and the simple authoring format through the lowering layer)."""
+
+    STRIP = {"offset", "head", "guid", "source", "index", "indentLevel"}
+
+    def normalize(self, action):
+        out = {k: v for k, v in action.items() if k not in self.STRIP}
+        at = out.get("actionType")
+        if isinstance(at, dict):
+            out["actionType"] = {k: v for k, v in at.items() if k != "confidence"}
+        return out
+
+    SCHEMA_RECORDS = [
+        {"actionType": {"code": 21, "name": "SetText"},
+         "targetVariable": "VxFile", "value": "TestData\\TestConsole.exe"},
+        {"actionType": {"code": 21, "name": "SetText"},
+         "targetVariable": "empty", "value": ""},
+        {"actionType": {"code": 36, "name": "SetBoolean"},
+         "targetVariable": "addressInput", "value": True},
+        {"actionType": {"code": 36, "name": "SetBoolean"},
+         "targetVariable": "jumping", "value": False},
+        {"actionType": {"code": 37, "name": "SetInteger"},
+         "targetVariable": "VxRow", "value": 1},
+        {"actionType": {"code": 40, "name": "QuickInput"},
+         "text": "{TXT:System1}", "perKeyDelay": 0.05},
+        {"actionType": {"code": 40, "name": "QuickInput"}, "text": "plain"},
+    ]
+
+    def test_schema_door_round_trip(self):
+        model = {"profile": {"id": None, "name": "Row2"},
+                 "commands": [{"phrase": "row two", "category": "t",
+                               "actions": [dict(r) for r in self.SCHEMA_RECORDS]}]}
+        xml, warnings = emit(model, DICT)
+        self.assertEqual(warnings, [])
+        decoded = vap2.decode_bytes(xml.encode("utf-8"))
+        actions = decoded["commands"][0]["actions"]
+        self.assertEqual(len(actions), len(self.SCHEMA_RECORDS))
+        for fed, got in zip(self.SCHEMA_RECORDS, actions):
+            with self.subTest(fed=fed):
+                self.assertEqual(self.normalize(got), fed)
+
+    def test_simple_door_round_trip(self):
+        from gen2 import names as gen2_names
+        from gen2.lower import lower_profile
+        doc = {"name": "Row2Simple", "commands": [
+            {"trigger": "set the script", "actions": [
+                {"type": "SetText", "variable": "Script", "value": "go {TXT:x}"},
+                {"type": "SetBoolean", "variable": "submit", "value": False},
+                {"type": "SetInteger", "variable": "c", "value": 4},
+                {"type": "QuickInput", "text": "typed", "per_key_delay": 0.05}]}]}
+        dictionary = gen2_names.load()
+        model, infos, warnings = lower_profile(doc, dictionary)
+        xml, emit_warnings = emit(model, dictionary)
+        self.assertEqual(infos + warnings + emit_warnings, [])
+        actions = vap2.decode_bytes(xml.encode("utf-8"))["commands"][0]["actions"]
+        expected = [
+            {"actionType": {"code": 21, "name": "SetText"},
+             "targetVariable": "Script", "value": "go {TXT:x}"},
+            {"actionType": {"code": 36, "name": "SetBoolean"},
+             "targetVariable": "submit", "value": False},
+            {"actionType": {"code": 37, "name": "SetInteger"},
+             "targetVariable": "c", "value": 4},
+            {"actionType": {"code": 40, "name": "QuickInput"},
+             "text": "typed", "perKeyDelay": 0.05},
+        ]
+        self.assertEqual([self.normalize(a) for a in actions], expected)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

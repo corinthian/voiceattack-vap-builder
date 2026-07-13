@@ -153,6 +153,75 @@ class ShorthandAndDefaultsTest(unittest.TestCase):
         self.assertTrue(any("delay" in w for w in warnings))
 
 
+class Row2AuthoringVerbTest(unittest.TestCase):
+    """W5 authoring verbs: SetText/SetBoolean/SetInteger/QuickInput lower to the same
+    schema records the decoder produces, with SetDecimal/Write-pattern hard-fail
+    validation. NO SetSmallInt verb: legacy-in, never authored-out."""
+
+    def test_settext_lowering(self):
+        cmd, _, warnings = one_command({"trigger": "t", "actions": [
+            {"type": "SetText", "variable": "Script", "value": "hello {TXT:x}"}]})
+        self.assertEqual(warnings, [])
+        r = cmd["actions"][0]
+        self.assertEqual(r["actionType"], {"code": 21, "name": "SetText"})
+        self.assertEqual((r["targetVariable"], r["value"]),
+                         ("Script", "hello {TXT:x}"))
+
+    def test_setboolean_lowering(self):
+        cmd, _, _ = one_command({"trigger": "t", "actions": [
+            {"type": "SetBoolean", "variable": "submit", "value": False}]})
+        r = cmd["actions"][0]
+        self.assertEqual(r["actionType"]["code"], 36)
+        self.assertIs(r["value"], False)
+
+    def test_setinteger_lowering(self):
+        cmd, _, _ = one_command({"trigger": "t", "actions": [
+            {"type": "SetInteger", "variable": "c", "value": 4}]})
+        r = cmd["actions"][0]
+        self.assertEqual(r["actionType"]["code"], 37)
+        self.assertEqual((r["targetVariable"], r["value"]), ("c", 4))
+
+    def test_quickinput_lowering(self):
+        cmd, _, _ = one_command({"trigger": "t", "actions": [
+            {"type": "QuickInput", "text": "{TXT:System1}", "per_key_delay": 0.05}]})
+        r = cmd["actions"][0]
+        self.assertEqual(r["actionType"]["code"], 40)
+        self.assertEqual((r["text"], r["perKeyDelay"]), ("{TXT:System1}", 0.05))
+
+    def test_quickinput_delay_optional(self):
+        cmd, _, _ = one_command({"trigger": "t", "actions": [
+            {"type": "QuickInput", "text": "abc"}]})
+        self.assertNotIn("perKeyDelay", cmd["actions"][0])
+
+    def test_no_setsmallint_authoring_verb(self):
+        _, _, warnings = one_command({"trigger": "t", "actions": [
+            {"type": "SetSmallInt", "variable": "v", "value": 1}]})
+        self.assertIn("Unknown action type 'SetSmallInt' - skipped", warnings)
+
+    def test_row2_authoring_hard_fails(self):
+        cases = [
+            ({"type": "SetText", "value": "x"}, "non-empty string 'variable'"),
+            ({"type": "SetText", "variable": "v", "value": 5}, "string 'value'"),
+            ({"type": "SetBoolean", "variable": "v", "value": "yes"},
+             "boolean 'value'"),
+            ({"type": "SetBoolean", "variable": "v", "value": 1},
+             "boolean 'value'"),
+            ({"type": "SetInteger", "variable": "v", "value": 1.5},
+             "integer 'value'"),
+            ({"type": "SetInteger", "variable": "v", "value": True},
+             "integer 'value'"),
+            ({"type": "QuickInput", "per_key_delay": 0.05}, "string 'text'"),
+            ({"type": "QuickInput", "text": "a", "per_key_delay": -1},
+             "non-negative"),
+            ({"type": "QuickInput", "text": "a", "per_key_delay": True},
+             "non-negative"),
+        ]
+        for action, pattern in cases:
+            with self.subTest(pattern=pattern):
+                with self.assertRaisesRegex(LoweringError, pattern):
+                    lower({"commands": [{"trigger": "t", "actions": [action]}]})
+
+
 class HardFailValidationTest(unittest.TestCase):
     """Legacy _validate_actions semantics preserved: authoring defects exit-1 class."""
 

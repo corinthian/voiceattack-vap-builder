@@ -28,6 +28,7 @@ Run:  python3 -m unittest discover -s tests/integration -t . -v
 """
 
 import os
+import re
 import sys
 import unittest
 
@@ -184,6 +185,79 @@ class FixpointTest(unittest.TestCase):
 
     def test_fixpoint_zoom_zoom(self):
         self.assert_fixpoint(FIXTURES["zoom-zoom"])
+
+
+class Row2SyntheticFixpointTest(unittest.TestCase):
+    """W5 fixpoint-style gate on a SYNTHETIC profile carrying all five row-2 types —
+    its own class by ruling: the three W3 fixtures above stay exactly as ruled.
+
+    The synthetic source is gen2's own emission of four row-2 commands plus a forged
+    legacy ConditionSet action (VA1 Small-Int set — no modern tool emits one, so it is
+    forged from an IntSet chunk exactly the way legacy exports carry it). Gate:
+    decode -> encode -> decode is stable, where the FIRST application performs the
+    SANCTIONED NORMALIZATION SetSmallInt -> SetInteger (VA2 Small-Int/Integer merge —
+    ruling, not drift, and loud: exactly one warning), and the SECOND application is
+    an exact fixed point: zero warnings, records identical."""
+
+    def _sanction(self, action):
+        """Apply the sanctioned name mapping to a j1 record for comparison."""
+        out = _normalize(action)
+        at = out.get("actionType")
+        if isinstance(at, dict) and at.get("name") == "SetSmallInt":
+            out["actionType"] = {"code": 37, "name": "SetInteger"}
+        return out
+
+    def test_row2_synthetic_fixpoint(self):
+        model = {"profile": {"id": None, "name": "Row2Synth"},
+                 "commands": [{"phrase": "all five", "category": "w5", "actions": [
+                     {"actionType": {"code": 21, "name": "SetText"},
+                      "targetVariable": "VxFile", "value": "TestData"},
+                     {"actionType": {"code": 36, "name": "SetBoolean"},
+                      "targetVariable": "submit", "value": True},
+                     {"actionType": {"code": 37, "name": "SetInteger"},
+                      "targetVariable": "VxRow", "value": 1},
+                     {"actionType": {"code": 40, "name": "QuickInput"},
+                      "text": "{TXT:System1}", "perKeyDelay": 0.05},
+                     {"actionType": {"code": 37, "name": "SetInteger"},
+                      "targetVariable": "legacyspeed", "value": 3},
+                 ]}]}
+        xml, warnings = emit(model, GEN2_DICT)
+        self.assertEqual(warnings, [])
+        # Forge the legacy Small-Int set: the donor is the unique IntSet chunk that
+        # carries ConditionSetName "legacyspeed".
+        donor = None
+        for m in re.finditer(r"<CommandAction>.*?</CommandAction>", xml, re.S):
+            if "legacyspeed" in m.group(0):
+                donor = m.group(0)
+        self.assertIsNotNone(donor)
+        forged = donor.replace("<ActionType>IntSet</ActionType>",
+                               "<ActionType>ConditionSet</ActionType>")
+        self.assertNotEqual(donor, forged)
+        synthetic = xml.replace(donor, forged)
+
+        j1 = vap2.decode_bytes(synthetic.encode("utf-8"))
+        names1 = [a["actionType"]["name"]
+                  for a in j1["commands"][0]["actions"]]
+        self.assertEqual(names1, ["SetText", "SetBoolean", "SetInteger",
+                                  "QuickInput", "SetSmallInt"])
+
+        # First application: normalizes SetSmallInt -> IntSet, loudly (exactly once).
+        xml2, warnings2 = emit(schema_input.parse(j1), GEN2_DICT)
+        self.assertEqual(len(warnings2), 1, warnings2)
+        self.assertIn("sanctioned normalization", warnings2[0])
+        j2 = vap2.decode_bytes(xml2.encode("utf-8"))
+        acts1 = [self._sanction(a) for a in j1["commands"][0]["actions"]]
+        acts2 = [_normalize(a) for a in j2["commands"][0]["actions"]]
+        self.assertEqual(acts1, acts2)
+
+        # Second application: exact fixed point — no warnings, records identical.
+        xml3, warnings3 = emit(schema_input.parse(j2), GEN2_DICT)
+        self.assertEqual(warnings3, [])
+        j3 = vap2.decode_bytes(xml3.encode("utf-8"))
+        self.assertEqual([_normalize(a) for a in j2["commands"][0]["actions"]],
+                         [_normalize(a) for a in j3["commands"][0]["actions"]])
+        self.assertEqual([c["phrase"] for c in j2["commands"]],
+                         [c["phrase"] for c in j3["commands"]])
 
 
 if __name__ == "__main__":
