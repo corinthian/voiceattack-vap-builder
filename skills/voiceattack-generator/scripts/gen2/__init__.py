@@ -12,6 +12,7 @@ parse, emit_profile.emit, names.load).
 
 from . import names
 from .emit_profile import EmitError, emit
+from .lower import LoweringError, lower_profile
 from .schema_input import SchemaError, load, parse
 
 

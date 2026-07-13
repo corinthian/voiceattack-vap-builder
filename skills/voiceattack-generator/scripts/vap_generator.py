@@ -916,11 +916,17 @@ def print_help():
     """Print usage information."""
     print("""VoiceAttack Profile Generator
 
-Usage: python3 vap_generator.py <input.json> [output.vap]
+Usage: python3 vap_generator.py <input.json> [output.vap] [--no-idiom] [--legacy-emit]
 
 Arguments:
   input.json    JSON file with profile definition
   output.vap    Output file (default: input filename with .vap extension)
+
+Flags:
+  --no-idiom     Disable overloaded-trigger auto-lowering for the whole run
+                 (per-command opt-out: "idiom": false on the command)
+  --legacy-emit  Use this file's own 2.0.0 emission path instead of the gen2
+                 pipeline (soak oracle; retires with it)
 
 Example JSON format:
 {
@@ -965,14 +971,47 @@ Key Names:
 """)
 
 
-def main():
-    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
-        print_help()
-        sys.exit(0 if sys.argv[1:] else 1)
+def _run_gen2_pipeline(profile_data, no_idiom):
+    """W4 default path: simple JSON -> gen2.lower -> gen2.emit_profile (one pipeline,
+    two doors — refactor plan §3). This module's own emission path stays intact behind
+    --legacy-emit as the byte-identity oracle through soak. Returns (xml, warning
+    count); exits 1 on any hard-fail, before any output file exists."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from gen2 import names as gen2_names
+    from gen2.emit_profile import EmitError, emit as gen2_emit
+    from gen2.lower import LoweringError, lower_profile
 
-    input_file = sys.argv[1]
-    if len(sys.argv) > 2:
-        output_file = sys.argv[2]
+    try:
+        dictionary = gen2_names.load()
+        model, infos, lower_warnings = lower_profile(
+            profile_data, dictionary, no_idiom=no_idiom)
+        xml, emit_warnings = gen2_emit(model, dictionary)
+    except (LoweringError, EmitError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    for line in infos:
+        # Idiom-compiler visibility (D2 ruling: auto-lowering is the default, not a
+        # defect — INFO lines never count toward the warning exit code).
+        print(f"INFO: {line}", file=sys.stderr)
+    for w in lower_warnings + emit_warnings:
+        print(f"WARNING: {w}", file=sys.stderr)
+    return xml, len(lower_warnings) + len(emit_warnings)
+
+
+def main():
+    argv = sys.argv[1:]
+    legacy_emit = "--legacy-emit" in argv
+    no_idiom = "--no-idiom" in argv
+    args = [a for a in argv if a not in ("--legacy-emit", "--no-idiom")]
+
+    if not args or args[0] in ("-h", "--help"):
+        print_help()
+        sys.exit(0 if args else 1)
+
+    input_file = args[0]
+    if len(args) > 1:
+        output_file = args[1]
     else:
         base, ext = os.path.splitext(input_file)
         output_file = (base if ext.lower() == ".json" else input_file) + ".vap"
@@ -994,11 +1033,15 @@ def main():
         print(f"ERROR: Invalid JSON in {input_file}: {e}", file=sys.stderr)
         sys.exit(1)
 
-    try:
-        xml = generate_profile(profile_data)
-    except ConditionValidationError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        sys.exit(1)
+    if legacy_emit:
+        try:
+            xml = generate_profile(profile_data)
+        except ConditionValidationError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            sys.exit(1)
+        warning_count = len(_warnings)
+    else:
+        xml, warning_count = _run_gen2_pipeline(profile_data, no_idiom)
 
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(xml)
@@ -1010,8 +1053,8 @@ def main():
 
     print(f"Generated: {output_file}")
     print(f"Commands: {cmd_count}")
-    if _warnings:
-        print(f"Warnings: {len(_warnings)}")
+    if warning_count:
+        print(f"Warnings: {warning_count}")
         sys.exit(2)
 
 

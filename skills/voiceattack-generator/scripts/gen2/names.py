@@ -78,6 +78,21 @@ class Dictionary:
             if canonical in self.mouse_code_by_name:
                 self.mouse_code_by_name.setdefault(alias, self.mouse_code_by_name[canonical])
 
+        # Keys: name (canonical + every alias, lowercase) -> VK, and VK -> canonical.
+        # The lowering layer's key table (plan W4) — replaces vap_generator's KEY_CODES
+        # as the runtime authority; the dictionary is a superset of that hand table.
+        self.key_vk_by_name = {}
+        self.key_name_by_vk = {}
+        for k in raw.get("keys", []):
+            vk = k.get("vk")
+            canonical = k.get("canonical")
+            if vk is None or canonical is None:
+                continue
+            self.key_vk_by_name[canonical.lower()] = vk
+            self.key_name_by_vk.setdefault(vk, canonical)
+            for alias in k.get("aliases", []):
+                self.key_vk_by_name.setdefault(alias.lower(), vk)
+
     # --- lookups (all return None on a miss; callers refuse, never guess) -----------
 
     def action_entry(self, code):
