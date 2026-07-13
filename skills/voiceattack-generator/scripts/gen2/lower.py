@@ -75,7 +75,13 @@ def _lower_command(cmd, dictionary, no_idiom, info, warn):
     if not actions:
         actions = _shorthand_actions(cmd, dictionary, trigger, warn)
 
-    if _idiom_fires(cmd, actions, trigger, no_idiom):
+    fires, veto = _idiom_detect(cmd, actions, trigger, no_idiom)
+    if veto is not None:
+        # Unmodelable trigger grammar on an otherwise idiom-shaped command (closure
+        # wave item 2): never emit a chain verified against garbage utterances.
+        warn("Command '%s': overloaded-trigger idiom not applied - %s; passing the "
+             "command through untouched" % (trigger, veto))
+    elif fires:
         lowered = _compile_idiom(cmd, actions, trigger, info, warn)
         if lowered is not None:
             actions = lowered
@@ -233,48 +239,128 @@ def _fail(trigger, msg):
 
 # --- the idiom compiler ----------------------------------------------------------------
 
-def _alternative_groups(trigger):
-    """Bracket groups with >=2 non-empty tokens and NO empty token (a trailing empty
-    token is the optional-word syntax `[word;]`, never a dispatch alternative).
-    Returns [(tokens, chars_after_group)] in trigger order."""
-    out = []
+_RANGE_RE = re.compile(r"^(\d+)\.\.(\d+)$")
+
+
+def _parse_trigger(trigger):
+    """Shared trigger-grammar parser for detection AND enumeration — one reading of
+    the trigger, so the two can never drift (closure wave item 3's root concern).
+
+    Returns (segments, problem). segments alternate ("text", str) and ("group",
+    {"tokens": [...], "has_empty": bool}) in trigger order; group tokens are stripped,
+    non-empty, and have VA's `N..M` numeric-range wildcard EXPANDED (corinthian CSV
+    oracle: `[1..4;]` -> 1,2,3,4 plus omission). problem is a reason string when the
+    grammar cannot be modeled — nested/unmatched brackets, range forms VA's behavior
+    is unverified for — and the idiom must be vetoed (warn + pass through untouched,
+    closure wave items 1-2)."""
+    depth = 0
+    for ch in trigger:
+        if ch == "[":
+            depth += 1
+            if depth > 1:
+                return None, "trigger has nested brackets (VA legality unknown)"
+        elif ch == "]":
+            depth -= 1
+            if depth < 0:
+                return None, "trigger has an unmatched ']'"
+    if depth != 0:
+        return None, "trigger has an unmatched '['"
+
+    segments = []
+    pos = 0
     for m in _GROUP_RE.finditer(trigger):
-        tokens = [t.strip() for t in m.group(1).split(";")]
-        if len(tokens) >= 2 and all(tokens):
-            out.append((tokens, trigger[m.end():]))
+        if trigger[pos:m.start()]:
+            segments.append(("text", trigger[pos:m.start()]))
+        raw = [t.strip() for t in m.group(1).split(";")]
+        tokens = []
+        for t in raw:
+            if not t:
+                continue
+            rm = _RANGE_RE.match(t)
+            if rm:
+                lo, hi = rm.group(1), rm.group(2)
+                if str(int(lo)) != lo or str(int(hi)) != hi:
+                    return None, ("zero-padded numeric range '%s' (VA behavior "
+                                  "unverified)" % t)
+                if int(lo) > int(hi):
+                    return None, ("descending numeric range '%s' (VA behavior "
+                                  "unverified)" % t)
+                if int(hi) - int(lo) + 1 > _UTTERANCE_CAP:
+                    return None, ("numeric range '%s' expands past the %d-utterance "
+                                  "cap" % (t, _UTTERANCE_CAP))
+                tokens.extend(str(v) for v in range(int(lo), int(hi) + 1))
+            elif ".." in t:
+                return None, ("range-like token '%s' is not plain N..M (VA behavior "
+                              "unverified)" % t)
+            else:
+                tokens.append(t)
+        segments.append(("group", {"tokens": tokens,
+                                   # from RAW tokens: range expansion grows `tokens`,
+                                   # so a length comparison would mask the omission
+                                   "has_empty": any(not t for t in raw)}))
+        pos = m.end()
+    if trigger[pos:]:
+        segments.append(("text", trigger[pos:]))
+    return segments, None
+
+
+def _is_dispatch_group(group):
+    """An alternative (dispatch-capable) group: >=2 tokens after range expansion and
+    NO empty token (a trailing empty token is the optional-word syntax `[word;]`)."""
+    return len(group["tokens"]) >= 2 and not group["has_empty"]
+
+
+def _alternative_groups(segments):
+    """[(tokens, is_final)] for every dispatch-capable group. is_final: nothing but
+    whitespace follows the group — the amendment's Ends With / Contains switch."""
+    out = []
+    for i, (kind, payload) in enumerate(segments):
+        if kind != "group" or not _is_dispatch_group(payload):
+            continue
+        rest = segments[i + 1:]
+        is_final = all(k == "text" and not t.strip() for k, t in rest)
+        out.append((payload["tokens"], is_final))
     return out
 
 
-def _idiom_fires(cmd, actions, trigger, no_idiom):
+def _idiom_detect(cmd, actions, trigger, no_idiom):
     """The conservative detection predicate (build spec W4): fire ONLY when the command
     has an explicit actions list of length N>=2, the trigger has exactly ONE alternative
-    bracket group and it has exactly N alternatives, every action has the SAME type (a
-    KeyDown/PressKey/KeyUp chord must never be split), none is a condition marker, and
-    the command is not opted out (`"idiom": false`, or the global --no-idiom).
-    Anything else passes through untouched."""
+    bracket group and it has exactly N alternatives AFTER range expansion (a range in
+    the dispatch group changes the count and the exact-N match sees the expanded count
+    — never a miscount), every action has the SAME type (a KeyDown/PressKey/KeyUp chord
+    must never be split), none is a condition marker, and the command is not opted out
+    (`"idiom": false`, or the global --no-idiom).
+
+    Returns (fires, veto_reason): (True, None) to compile; (False, None) to pass
+    through silently; (False, reason) when the command is idiom-shaped but the trigger
+    grammar cannot be modeled — the caller warns and passes through untouched."""
     if no_idiom or cmd.get("idiom") is False:
-        return False
+        return False, None
     if not isinstance(cmd.get("actions"), list) or len(actions) < 2:
-        return False
+        return False, None
     if not all(isinstance(a, dict) for a in actions):
-        return False
+        return False, None
     types = {a.get("type", "PressKey") for a in actions}
     if len(types) != 1 or types & _CONDITION_TYPES:
-        return False
+        return False, None
     if next(iter(types)) not in _SIMPLE_TYPES:
         # Every branch action would be refused downstream — an empty Begin/ElseIf/End
         # shell helps nobody; pass through so the refusals land as plain warnings
         # (W4 fix-wave finding 5).
-        return False
+        return False, None
     if all(a == actions[0] for a in actions[1:]):
         # An overload whose branches are IDENTICAL is meaningless (the double-tap
         # case) — the same action fires either way; leave the command alone
         # (W4 fix-wave finding 3; the chord-split hazard stays on the W7 ruling list).
-        return False
-    groups = _alternative_groups(trigger)
+        return False, None
+    segments, problem = _parse_trigger(trigger)
+    if problem is not None:
+        return False, problem
+    groups = _alternative_groups(segments)
     if len(groups) != 1 or len(groups[0][0]) != len(actions):
-        return False
-    return True
+        return False, None
+    return True, None
 
 
 def _compile_idiom(cmd, actions, trigger, info, warn):
@@ -285,17 +371,26 @@ def _compile_idiom(cmd, actions, trigger, info, warn):
     action list, or None when the idiom must not apply (utterance-cap veto) — the
     caller then passes the command through untouched, which honestly restores exactly
     what the author wrote."""
-    tokens, after = _alternative_groups(trigger)[0]
-    final = after.strip() == ""
+    segments, problem = _parse_trigger(trigger)
+    assert problem is None, "unmodelable trigger reached compile: %s" % problem
+    tokens, final = _alternative_groups(segments)[0]
     operator = "Ends With" if final else "Contains"
 
-    utterances, count = _trigger_utterances(trigger)
+    utterances, count = _trigger_utterances(segments)
     if utterances is None:
         warn("Command '%s': overloaded-trigger idiom not applied - the trigger expands "
              "to %d utterances (cap %d), too many to verify dispatch; passing the "
              "command through untouched" % (trigger, count, _UTTERANCE_CAP))
         return None
     tagged = [(spoken, token) for spoken, token in utterances if token is not None]
+    if not tagged:
+        # Hard guard (closure wave item 3): a vacuous simulation must be impossible —
+        # "verified over 0 utterances" is unprintable by construction. Tripping this
+        # means the parser/detector disagreed about which group dispatches.
+        raise LoweringError(
+            "Command '%s': overloaded-trigger idiom produced no dispatch-tagged "
+            "utterances (enumerator/detector drift) - refusing rather than emit an "
+            "unverified chain" % trigger)
 
     branches = _order_branches(list(zip(tokens, actions)), suffix_mode=final,
                                trigger=trigger, operator=operator,
@@ -324,47 +419,69 @@ def _compile_idiom(cmd, actions, trigger, info, warn):
 _UTTERANCE_CAP = 512
 
 
-def _trigger_utterances(trigger):
-    """Statically enumerate every spoken phrase the trigger grammar produces, tagged
-    with the dispatch-group token each one chose (None on non-dispatch segments),
-    whitespace-normalized the way VA recognizes them. Returns (utterances, count);
-    (None, count) when the expansion exceeds _UTTERANCE_CAP.
+def _trigger_utterances(segments):
+    """Statically enumerate every spoken phrase the parsed trigger grammar produces,
+    tagged with the dispatch-group token each one chose (None on non-dispatch
+    segments). Returns (utterances, count); (None, count) past _UTTERANCE_CAP.
+
+    Text fidelity matches VA's own CSV expansion oracle EXACTLY (closure wave items
+    4-5): authored spacing — including a trailing space — is preserved verbatim; an
+    OMITTED optional group absorbs exactly one adjacent space (right first, then
+    left, skipping other omissions), which is how VA prints `[inch;] Climb [1..4;]`
+    as "Climb", "Climb 1", "inch Climb 1", ...
 
     VA matches {LASTSPOKENCMD} against the FULL recognized phrase, so a token can
     collide with the fixed prefix, the fixed tail, optional-group text, and across
     word boundaries — which is exactly why collision analysis must happen at the
     utterance level, never token-vs-token (verifier findings A/B/C/D/M)."""
-    segments = []  # each: list of (text, chosen_dispatch_token_or_None)
-    pos = 0
-    for m in _GROUP_RE.finditer(trigger):
-        if trigger[pos:m.start()]:
-            segments.append([(trigger[pos:m.start()], None)])
-        tokens = [t.strip() for t in m.group(1).split(";")]
-        nonempty = [t for t in tokens if t]
-        has_empty = len(nonempty) < len(tokens)
-        is_dispatch = len(nonempty) >= 2 and not has_empty  # mirrors _alternative_groups
-        options = [(t, t if is_dispatch else None) for t in nonempty]
-        if has_empty or not options:
+    option_lists = []
+    group_positions = []
+    for kind, payload in segments:
+        if kind == "text":
+            option_lists.append([(payload, None)])
+            continue
+        group_positions.append(len(option_lists))
+        dispatch = _is_dispatch_group(payload)
+        options = [(t, t if dispatch else None) for t in payload["tokens"]]
+        if payload["has_empty"] or not options:
             options.append(("", None))
-        segments.append(options)
-        pos = m.end()
-    if trigger[pos:]:
-        segments.append([(trigger[pos:], None)])
+        option_lists.append(options)
 
     count = 1
-    for seg in segments:
-        count *= len(seg)
+    for options in option_lists:
+        count *= len(options)
     if count > _UTTERANCE_CAP:
         return None, count
 
     out = []
-    for combo in itertools.product(*segments):
-        # Segments keep the trigger's own whitespace; collapse runs the way VA hears
-        # the spoken phrase (an omitted optional word leaves no double space).
-        spoken = re.sub(r"\s+", " ", "".join(text for text, _ in combo)).strip()
+    for combo in itertools.product(*option_lists):
+        spoken = _join_spoken([text for text, _ in combo], group_positions)
         chosen = [token for _, token in combo if token is not None]
         out.append((spoken, chosen[0] if chosen else None))
     return out, count
+
+
+def _join_spoken(pieces, group_positions):
+    """Join utterance pieces the way VA prints them: each OMITTED group (empty piece)
+    absorbs one adjacent space — the one following it if present, else the one ending
+    the nearest non-empty piece to its left. Nothing else is normalized: authored
+    spacing (runs, trailing space) survives verbatim, per the CSV oracle."""
+    pieces = list(pieces)
+    for i in group_positions:
+        if pieces[i] != "":
+            continue
+        j = i + 1
+        while j < len(pieces) and pieces[j] == "":
+            j += 1
+        if j < len(pieces) and pieces[j][:1] == " ":
+            pieces[j] = pieces[j][1:]
+            continue
+        j = i - 1
+        while j >= 0 and pieces[j] == "":
+            j -= 1
+        if j >= 0 and pieces[j][-1:] == " ":
+            pieces[j] = pieces[j][:-1]
+    return "".join(pieces)
 
 
 def _order_branches(pairs, suffix_mode, trigger, operator, utterances):

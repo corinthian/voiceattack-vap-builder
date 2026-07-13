@@ -12,13 +12,18 @@ is included here.
 Run:  python3 -m unittest discover -s skills/voiceattack-generator/tests -v
 """
 
+import csv
+import json
 import os
 import re
+import subprocess
 import sys
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.join(os.path.dirname(HERE), "scripts")
+ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
+PROFILES = os.path.join(ROOT, "reference profiles")
 sys.path.insert(0, SCRIPTS)
 
 import vap_generator  # noqa: E402  (same skill: the legacy oracle)
@@ -348,7 +353,9 @@ class IdiomDispatchSimulationTest(unittest.TestCase):
                 cond = a["condition"]
                 suffix_mode = cond["operator"]["name"] == "Ends With"
                 branches.append((cond["value"], acts[i + 1]))
-        utterances, _ = gen2_lower._trigger_utterances(cmd["trigger"])
+        segments, problem = gen2_lower._parse_trigger(cmd["trigger"])
+        self.assertIsNone(problem)
+        utterances, _ = gen2_lower._trigger_utterances(segments)
         tagged = [(u, t) for u, t in utterances if t is not None]
         self.assertGreater(len(tagged), 0)
         failure = gen2_lower._simulate_dispatch(branches, suffix_mode, tagged)
@@ -424,6 +431,175 @@ class IdiomDispatchSimulationTest(unittest.TestCase):
         # Finding 4: decoded schema JSON must be routed to python3 -m gen2.
         with self.assertRaisesRegex(LoweringError, r"schema_version.*-m gen2"):
             lower({"schema_version": 2, "profile": {"name": "X"}, "commands": []})
+
+
+class RangeAndGrammarTest(unittest.TestCase):
+    """W4 closure wave: the enumerator models VA's `N..M` numeric-range wildcard
+    exactly as the CSV oracle shows; unmodelable trigger grammar (nested/unmatched
+    brackets, unverified range forms) vetoes the idiom — warn + pass through, never a
+    chain verified against garbage utterances."""
+
+    def assert_vetoed(self, trigger, reason_fragment):
+        cmd = idiom_cmd(trigger=trigger)
+        lowered, infos, warnings = one_command(cmd)
+        self.assertEqual(infos, [])
+        self.assertEqual(types_of(lowered), ["PressKey", "PressKey"])
+        self.assertTrue(any(reason_fragment in w and
+                            "passing the command through untouched" in w
+                            for w in warnings), warnings)
+
+    def test_range_expansion_matches_oracle_shape(self):
+        # corinthian's `[inch;] Climb [1..4;] [continuous;]` per the VA CSV export.
+        segments, problem = gen2_lower._parse_trigger(
+            "[inch;] Climb [1..4;] [continuous;]")
+        self.assertIsNone(problem)
+        utts, count = gen2_lower._trigger_utterances(segments)
+        self.assertEqual(count, 20)  # [inch;]=2 x [1..4;]=5 x [continuous;]=2
+        spoken = {s for s, _ in utts}
+        self.assertIn("Climb", spoken)             # everything optional omitted
+        self.assertIn("Climb 1", spoken)
+        self.assertIn("inch Climb 4 continuous", spoken)
+        self.assertIn("Climb continuous", spoken)
+        self.assertNotIn("Climb 1..4", spoken)     # the literal must never survive
+        self.assertEqual(len(spoken), 20)
+
+    def test_live_range_repro_refuses_over_real_expansion(self):
+        # The verifier's live repro: token '5' captures VA's real "select 6 5"
+        # utterance (range expanded), so the idiom must refuse — before this wave the
+        # INFO line falsely claimed "verified over 4 utterances".
+        with self.assertRaisesRegex(LoweringError,
+                                    r"'select 6 5'.*captured by token '5'"):
+            one_command(idiom_cmd(trigger="select [5; 6] [1..12;]"))
+
+    def test_range_in_dispatch_group_counts_expanded(self):
+        # [1..3] IS the dispatch group: 3 alternatives after expansion.
+        cmd = {"trigger": "select [1..3]", "actions": [
+            {"type": "PressKey", "keys": [k]} for k in ("a", "b", "c")]}
+        lowered, infos, _ = one_command(cmd)
+        self.assertEqual(len(infos), 1)
+        values = [a["condition"]["value"] for a in lowered["actions"]
+                  if "condition" in a]
+        self.assertEqual(values, ["1", "2", "3"])
+
+    def test_range_in_dispatch_group_never_miscounts(self):
+        # Two actions against three expanded alternatives: silent no-fire, no veto.
+        cmd = {"trigger": "select [1..3]", "actions": [
+            {"type": "PressKey", "keys": ["a"]}, {"type": "PressKey", "keys": ["b"]}]}
+        lowered, infos, warnings = one_command(cmd)
+        self.assertEqual((infos, warnings), ([], []))
+        self.assertEqual(types_of(lowered), ["PressKey", "PressKey"])
+
+    def test_nested_brackets_vetoed(self):
+        self.assert_vetoed("pan [up; [down]]", "nested brackets")
+
+    def test_unmatched_open_bracket_vetoed(self):
+        self.assert_vetoed("pan [up; down", "unmatched '['")
+
+    def test_unmatched_close_bracket_vetoed(self):
+        self.assert_vetoed("pan up; down]", "unmatched ']'")
+
+    def test_zero_padded_range_vetoed(self):
+        self.assert_vetoed("pan [01..04]", "zero-padded")
+
+    def test_descending_range_vetoed(self):
+        self.assert_vetoed("pan [4..1]", "descending")
+
+    def test_oversize_range_vetoed(self):
+        self.assert_vetoed("pan [1..9999]", "cap")
+
+    def test_range_like_token_vetoed(self):
+        self.assert_vetoed("go [ready 1..2; other]", "range-like")
+
+    def test_authored_trailing_space_preserved(self):
+        # VA's CSV keeps an authored trailing space ('set decimal test ') — the
+        # enumerator must reproduce the oracle text exactly (closure item 4).
+        segments, _ = gen2_lower._parse_trigger("set decimal test ")
+        utts, _ = gen2_lower._trigger_utterances(segments)
+        self.assertEqual(utts, [("set decimal test ", None)])
+
+    def test_empty_tagged_set_refuses(self):
+        # Hard guard (closure item 3): a vacuous simulation pass must be impossible —
+        # unreachable while parser and detector share one parse, so SIMULATE the
+        # drift: an enumerator that comes back with no tagged utterances.
+        real = gen2_lower._trigger_utterances
+        gen2_lower._trigger_utterances = lambda segments: ([("pan up", None)], 1)
+        try:
+            with self.assertRaisesRegex(LoweringError, "no dispatch-tagged utterances"):
+                gen2_lower._compile_idiom(
+                    {}, [{"type": "PressKey", "keys": ["a"]},
+                         {"type": "PressKey", "keys": ["b"]}], "pan [up; down]",
+                    lambda m: self.fail("INFO printed for unverified chain: %s" % m),
+                    lambda m: None)
+        finally:
+            gen2_lower._trigger_utterances = real
+
+
+class TriggerExpansionOracleTest(unittest.TestCase):
+    """THE ORACLE (closure item 5): VA's own CSV exports are the only independent
+    check on the enumerator — the trust anchor of every dispatch proof. Differential:
+    for every command in each reference profile, _trigger_utterances must reproduce
+    the CSV's expanded phrase set EXACTLY (text-exact, ranges included), with only the
+    known exclusions: commands VA omits from the CSV wholly (corinthian's 8 dictation/
+    listening/system commands). Reference profiles and CSVs are gitignored local
+    assets — skip-if-missing; the decoder is driven as a SUBPROCESS because this suite
+    never imports vap2 (architecture ruling)."""
+
+    PAIRS = [("corinthian-4-Profile.vap", "corinthian-4-Profile.csv", 8),
+             ("Probe B-Profile.vap", "Probe B-Profile.csv", 0),
+             ("conditionals-Profile.vap", "conditionals-Profile.csv", 0)]
+
+    def triggers_of(self, vap_path):
+        decoder_scripts = os.path.join(ROOT, "skills", "voiceattack-decoder",
+                                       "scripts")
+        if not os.path.isdir(os.path.join(decoder_scripts, "vap2")):
+            self.skipTest("decoder skill not present")
+        r = subprocess.run([sys.executable, "-m", "vap2", vap_path, "--stdout"],
+                           capture_output=True, text=True, cwd=decoder_scripts)
+        if r.returncode != 0:
+            self.skipTest("decoder subprocess failed: %s" % r.stderr[:200])
+        return [c["phrase"] for c in json.loads(r.stdout)["commands"]]
+
+    def test_csv_expansion_differential(self):
+        ran_any = False
+        for vap_name, csv_name, expected_absent in self.PAIRS:
+            vap_path = os.path.join(PROFILES, vap_name)
+            csv_path = os.path.join(PROFILES, csv_name)
+            if not (os.path.exists(vap_path) and os.path.exists(csv_path)):
+                continue
+            ran_any = True
+            with self.subTest(profile=vap_name):
+                triggers = self.triggers_of(vap_path)
+                with open(csv_path, newline="", encoding="utf-8-sig") as f:
+                    csv_set = {row[0] for row in csv.reader(f) if row}
+                self.assertGreater(len(csv_set), 0)
+
+                enum = {}
+                for trigger in triggers:
+                    segments, problem = gen2_lower._parse_trigger(trigger)
+                    self.assertIsNone(
+                        problem, "unmodelable real-world trigger %r: %s"
+                        % (trigger, problem))
+                    utts, count = gen2_lower._trigger_utterances(segments)
+                    self.assertIsNotNone(
+                        utts, "real-world trigger %r blew the cap (%d)"
+                        % (trigger, count))
+                    enum[trigger] = {s for s, _ in utts}
+
+                absent = sorted(t for t, us in enum.items() if not (us & csv_set))
+                self.assertEqual(
+                    len(absent), expected_absent,
+                    "wholly-absent command set changed: %r" % absent)
+                union_all = set().union(*enum.values())
+                self.assertEqual(
+                    sorted(csv_set - union_all), [],
+                    "CSV phrases the enumerator never produces")
+                covered = set().union(*(us for t, us in enum.items()
+                                        if t not in absent))
+                self.assertEqual(
+                    sorted(covered - csv_set), [],
+                    "enumerated utterances VA's oracle does not list")
+        if not ran_any:
+            self.skipTest("no local CSV oracle pairs present")
 
 
 class LegacyParityTest(unittest.TestCase):
