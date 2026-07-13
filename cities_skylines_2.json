@@ -1,0 +1,79 @@
+{
+  "name": "Cities Skylines II",
+  "commands": [
+    {"_section": "=== CAMERA ==="},
+    {"trigger": "pan [up; down; left; right]", "actions": [
+      {"type": "PressKey", "keys": ["w"], "duration": 0.1},
+      {"type": "PressKey", "keys": ["s"], "duration": 0.1},
+      {"type": "PressKey", "keys": ["a"], "duration": 0.1},
+      {"type": "PressKey", "keys": ["d"], "duration": 0.1}
+    ], "category": "camera"},
+    {"trigger": "angle [up; down]", "actions": [
+      {"type": "PressKey", "keys": ["t"], "duration": 0.1},
+      {"type": "PressKey", "keys": ["g"], "duration": 0.1}
+    ], "category": "camera"},
+    {"trigger": "camera [left; right]", "actions": [
+      {"type": "PressKey", "keys": ["q"], "duration": 0.1},
+      {"type": "PressKey", "keys": ["e"], "duration": 0.1}
+    ], "category": "camera"},
+    {"trigger": "zoom [out; in]", "actions": [
+      {"type": "PressKey", "keys": ["f"], "duration": 1.5},
+      {"type": "PressKey", "keys": ["r"], "duration": 1.5}
+    ], "category": "camera"},
+
+    {"_section": "=== TOOLS ==="},
+    {"trigger": "go back", "key": "escape", "category": "tools"},
+    {"trigger": "rotate counterclockwise", "actions": [{"type": "PressKey", "keys": ["shift", "q"], "duration": 0.1}], "category": "tools"},
+    {"trigger": "rotate clockwise", "actions": [{"type": "PressKey", "keys": ["shift", "e"], "duration": 0.1}], "category": "tools"},
+
+    {"_section": "=== SIMULATION ==="},
+    {"trigger": "pause", "key": "space", "category": "simulation"},
+    {"trigger": "game [normal; fast; fastest]", "actions": [
+      {"type": "PressKey", "keys": ["1"], "duration": 0.1},
+      {"type": "PressKey", "keys": ["2"], "duration": 0.1},
+      {"type": "PressKey", "keys": ["3"], "duration": 0.1}
+    ], "category": "simulation"},
+
+    {"_section": "=== TOOLBAR ==="},
+    {"trigger": "bulldozer", "key": "b", "category": "toolbar"},
+    {"trigger": "map tiles", "key": "m", "category": "toolbar"},
+    {"trigger": "transportation overview", "key": "x", "category": "toolbar"},
+    {"trigger": "city statistics", "key": "v", "category": "toolbar"},
+    {"trigger": "city information", "key": "c", "category": "toolbar"},
+    {"trigger": "city economy", "key": "z", "category": "toolbar"},
+    {"trigger": "progression", "key": "p", "category": "toolbar"},
+
+    {"_section": "=== INFO PANEL ==="},
+    {"trigger": "focus selection", "key": "u", "category": "info_panel"},
+    {"trigger": "relocate", "actions": [{"type": "PressKey", "keys": ["lctrl", "r"], "duration": 0.1}], "category": "info_panel"},
+    {"trigger": "delete building", "actions": [{"type": "PressKey", "keys": ["lctrl", "d"], "duration": 0.1}], "category": "info_panel"},
+    {"trigger": "toggle activation", "actions": [{"type": "PressKey", "keys": ["lctrl", "a"], "duration": 0.1}], "category": "info_panel"},
+    {"trigger": "toggle emptying", "actions": [{"type": "PressKey", "keys": ["lctrl", "e"], "duration": 0.1}], "category": "info_panel"},
+    {"trigger": "edit lot", "actions": [{"type": "PressKey", "keys": ["lctrl", "l"], "duration": 0.1}], "category": "info_panel"},
+    {"trigger": "follow citizen", "actions": [{"type": "PressKey", "keys": ["lctrl", "f"], "duration": 0.1}], "category": "info_panel"},
+
+    {"_section": "=== SHORTCUTS ==="},
+    {"trigger": "pause menu", "key": "escape", "category": "shortcuts"},
+    {"trigger": "decrease elevation", "key": "pagedown", "category": "shortcuts"},
+    {"trigger": "increase elevation", "key": "pageup", "category": "shortcuts"},
+    {"trigger": "underground view", "key": "pagedown", "category": "shortcuts"},
+    {"trigger": "ground view", "key": "pageup", "category": "shortcuts"},
+    {"trigger": "quicksave", "key": "f5", "category": "shortcuts"},
+    {"trigger": "quickload", "key": "f9", "category": "shortcuts"},
+    {"trigger": "show info", "key": "i", "category": "shortcuts"},
+
+    {"_section": "=== PHOTO MODE ==="},
+    {"trigger": "hide interface", "key": "grave", "category": "photo_mode"},
+    {"trigger": "photo mode", "key": "period", "category": "photo_mode"},
+    {"trigger": "take photo", "key": "enter", "category": "photo_mode"},
+
+    {"_section": "=== EDITOR ==="},
+    {"trigger": "clone", "key": "c", "category": "editor"},
+    {"trigger": "auto connect", "key": "o", "category": "editor"},
+    {"trigger": "snap x", "key": "x", "category": "editor"},
+    {"trigger": "snap y", "key": "y", "category": "editor"},
+    {"trigger": "snap z", "key": "z", "category": "editor"},
+    {"trigger": "auto align", "key": "p", "category": "editor"},
+    {"trigger": "move item", "key": "m", "category": "editor"}
+  ]
+}

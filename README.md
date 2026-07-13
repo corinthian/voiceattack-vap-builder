@@ -78,18 +78,21 @@ See `skills/voiceattack-generator/examples/` for complete examples.
 
 ## Supported Actions
 
-This generator covers basic input simulation — suitable for gaming and simple automation. Special characters (`&`, `<`, `>`) in trigger phrases are automatically XML-escaped.
+This generator covers input simulation plus conditional dispatch and decimal variables — suitable for gaming, accessibility macros, and simple automation. Special characters (`&`, `<`, `>`) in trigger phrases are automatically XML-escaped.
 
 | Action | Description |
 |--------|-------------|
-| PressKey | Press and release a key |
+| PressKey | Press and release a key (chords via left/right modifiers) |
 | KeyDown / KeyUp | Hold or release a key (for combos like Ctrl+C) |
 | KeyToggle | Toggle key state (press once = down, again = up) |
-| MouseAction | Clicks (left, right, middle, double) and scroll (up, down) |
+| MouseAction | Buttons (left, middle, right, back, forward) with click/double/triple/down/up/toggle, and scroll (up, down, left, right) |
 | Pause | Wait between actions |
 | Say | Text-to-speech output |
+| SetDecimal | Set a decimal variable |
+| Write | Write a line to the VoiceAttack event log (variable tokens like `{DEC:var}` work) |
+| Conditionals | Text-compare `if` / `else if` / `else` blocks (BeginCondition / ElseIf / Else / EndCondition), nestable |
 
-**Not supported:** Variables, conditionals, loops, launching applications, clipboard operations, executing other commands, or any advanced VoiceAttack logic. For those features, edit the profile directly in VoiceAttack after import.
+**Not supported:** Loops, compound (AND/OR) conditions, non-Text condition types, launching applications, clipboard operations, or executing other commands. For those features, edit the profile directly in VoiceAttack after import.
 
 ## Command Phrase Syntax
 
@@ -103,9 +106,13 @@ Examples:
 ## Supported Keys
 
 Letters: a-z | Numbers: 0-9 | F-keys: f1-f12
-Special: enter, escape, space, tab, backspace, delete
+Special: enter, escape, space, tab, backspace, delete, insert, home, end, pageup, pagedown
 Arrows: left, up, right, down
-Modifiers: shift, ctrl, alt, win
+Modifiers (generic): shift, ctrl, alt, win
+Modifiers (left/right, for chording): lshift, rshift, lctrl, rctrl, lalt, ralt, lwin, rwin
+Numpad: numpad0-numpad9, numpad_add, numpad_subtract, numpad_multiply, numpad_divide, numpad_decimal, numpad_separator
+Punctuation: comma, period, slash, semicolon, quote, bracket_left, bracket_right, backslash, minus, equals, grave
+Toggle: capslock, numlock, scrolllock
 
 ## Decoder Tool (Standalone)
 

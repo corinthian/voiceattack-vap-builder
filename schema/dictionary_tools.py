@@ -13,7 +13,6 @@ Python 3, stdlib only. See schema/VAP_Round_Trip_Contract.md for the contract th
 import argparse
 import importlib.util
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -25,6 +24,9 @@ DICT_PATH = SCHEMA_DIR / "vap_capability_dictionary.json"
 MD_OUT_PATH = SCHEMA_DIR / "VAP_Capability_Dictionary.md"
 DECODER_PATH = REPO_ROOT / "skills" / "voiceattack-decoder" / "scripts" / "vap_decoder.py"
 GENERATOR_PATH = REPO_ROOT / "skills" / "voiceattack-generator" / "scripts" / "vap_generator.py"
+# gen2 is the 2.1 emit authority; the action-type audit reads its WIRED/DEFERRED sets
+# (plan W6) instead of regexing the retiring vap_generator.py's action_xml().
+GEN2_SCRIPTS_DIR = REPO_ROOT / "skills" / "voiceattack-generator" / "scripts"
 
 CONFIDENCE_LEVELS = {"solid", "plausible", "inferred", "parked"}
 ROUND_TRIP_VALUES = {"canonical", "warn", "opaque"}
@@ -471,16 +473,14 @@ def load_tool_module(path):
     return mod
 
 
-def extract_action_dispatch_types(generator_src):
-    """Regex-extract the action_type names vap_generator.py's action_xml() dispatches on."""
-    m = re.search(r"def action_xml\(.*?\):\n(.*?)\ndef ", generator_src, re.S)
-    body = m.group(1) if m else generator_src
-    types = set()
-    for tup in re.findall(r'action_type in \(([^)]*)\)', body):
-        types.update(re.findall(r'"([^"]+)"', tup))
-    for s in re.findall(r'action_type == "([^"]+)"', body):
-        types.add(s)
-    return types
+def load_gen2_emit():
+    """Import gen2's emit_profile so the audit can read the real 2.1 emit authority
+    (WIRED / EMIT_NORMALIZED / DEFERRED_XML). gen2 is a package with relative imports,
+    so its scripts dir must be on sys.path."""
+    if str(GEN2_SCRIPTS_DIR) not in sys.path:
+        sys.path.insert(0, str(GEN2_SCRIPTS_DIR))
+    from gen2 import emit_profile
+    return emit_profile
 
 
 def dict_key_name_maps(d):
@@ -587,19 +587,38 @@ def audit(d, decoder_mod, generator_mod, generator_src):
         "pending_dict_names_not_emitted_by_decoder": mouse_pending_dict_not_in_decoder,
     }
 
-    # --- Action types ---
-    dict_xml_types = {
-        at.get("xml_action_type")
+    # --- Action types (gen2 emit authority, parked-aware — plan W6) ---
+    # The retiring vap_generator.py's action_xml() is no longer the reference (its regex
+    # scan was blind to gen2 and to constant/table dispatch). gen2's WIRED set is the
+    # 2.1 emit authority; DEFERRED_XML names the deliberately-parked types.
+    emit = load_gen2_emit()
+    canonical_to_xml = {
+        at.get("canonical"): at.get("xml_action_type")
         for at in d.get("action_types", [])
-        if at.get("xml_action_type")
     }
-    generator_action_types = extract_action_dispatch_types(generator_src)
+    dict_xml_types = {x for x in canonical_to_xml.values() if x}
 
-    orphans_action_types = sorted(generator_action_types - dict_xml_types)
-    pending_action_types = sorted(dict_xml_types - generator_action_types)
+    # What gen2 ACTUALLY emits — resolving the SetSmallInt->IntSet normalization so the
+    # decode-only "ConditionSet" string is never falsely credited as emitted.
+    emitted_xml_types = set()
+    for canonical in emit.WIRED:
+        resolved = emit.EMIT_NORMALIZED.get(canonical, canonical)
+        xml_type = canonical_to_xml.get(resolved)
+        if xml_type:
+            emitted_xml_types.add(xml_type)
+
+    deferred_xml_types = set(emit.DEFERRED_XML)
+
+    orphans_action_types = sorted(emitted_xml_types - dict_xml_types)
+    parked_action_types = sorted(dict_xml_types & deferred_xml_types)
+    # Emit-ready in the dictionary, neither emitted nor deliberately parked — the
+    # W6 gate wants this EMPTY (each entry is a real adopt-or-park decision).
+    pending_action_types = sorted(dict_xml_types - emitted_xml_types - deferred_xml_types)
 
     report["action_types"] = {
+        "emitted_by_gen2": sorted(emitted_xml_types),
         "orphans_generator_handles_not_in_dict": orphans_action_types,
+        "parked_deferred_by_design": parked_action_types,
         "pending_dict_xml_types_not_handled_by_generator": pending_action_types,
     }
 
@@ -648,9 +667,11 @@ def format_audit_report(report):
     lines.append("")
 
     a = report["action_types"]
-    lines.append("=== Action Types (generator dispatch vs dictionary xml_action_type) ===")
-    lines.append(f"Orphans - generator handles, absent from dictionary [FAIL]: {_fmt_list(a['orphans_generator_handles_not_in_dict'])}")
-    lines.append(f"Pending - dictionary xml_action_type values generator doesn't handle: {_fmt_list(a['pending_dict_xml_types_not_handled_by_generator'])}")
+    lines.append("=== Action Types (gen2 emit authority vs dictionary xml_action_type) ===")
+    lines.append(f"Emitted by gen2 ({len(a['emitted_by_gen2'])}): {_fmt_list(a['emitted_by_gen2'])}")
+    lines.append(f"Orphans - gen2 emits, absent from dictionary [FAIL]: {_fmt_list(a['orphans_generator_handles_not_in_dict'])}")
+    lines.append(f"Parked - deferred by design (informational): {_fmt_list(a['parked_deferred_by_design'])}")
+    lines.append(f"Pending - emit-ready in dict, neither emitted nor parked [RESOLVE before release]: {_fmt_list(a['pending_dict_xml_types_not_handled_by_generator'])}")
     lines.append("")
 
     lines.append("=== Summary ===")

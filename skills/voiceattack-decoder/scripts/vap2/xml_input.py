@@ -70,6 +70,10 @@ def _parse_command(cmd_el, dictionary):
 
 
 def _parse_action(act_el, index, dictionary):
+    """Per-type field binding, mirroring the binary path's records to the field (build
+    spec W2.5: the record is the contract — key names, value types, and presence rules
+    must match actions.py exactly, because the fixpoint's second decode reads emitted
+    XML and its records are compared field-for-field against the binary decode)."""
     xml_type = _local_text(act_el, "ActionType")
     code = dictionary.code_for_xml_type(xml_type) if xml_type else None
     base = {
@@ -78,38 +82,195 @@ def _parse_action(act_el, index, dictionary):
         "source": "xml",
     }
 
-    duration = _local_float(act_el, "Duration")
-    if duration is not None:
-        base["duration"] = duration
-    # Code 23 rebinds Context as `text` below (binary-path record key); skip the generic key.
-    context = _local_text(act_el, "Context")
-    if context is not None and code != 23:
-        base["context"] = context
+    # PressKey (0): duration ALWAYS present, absent/zero binds 0.0 (binary _keys:
+    # `_opt_double or 0.0`); keyCodes ALWAYS present, even empty. KeyDown/Up/Toggle
+    # (8/9/67): keyCodes only — Duration reads 0.0 by definition and the binary record
+    # carries NO duration key (actions.py _keys_no_duration; spec sec 9.2).
+    if code == 0:
+        base["duration"] = _local_float(act_el, "Duration") or 0.0
+        base["keyCodes"] = _parse_keycodes(act_el, dictionary)
+        return base
+    if code in (8, 9, 67):
+        base["keyCodes"] = _parse_keycodes(act_el, dictionary)
+        return base
 
-    keycodes = _parse_keycodes(act_el, dictionary)
-    if keycodes:
-        base["keyCodes"] = keycodes
+    # Pause (2): duration ALWAYS present, absent/zero binds 0.0 (binary _pause).
+    if code == 2:
+        base["duration"] = _local_float(act_el, "Duration") or 0.0
+        return base
+
+    # Say (13): Context=text, X=volume, Y=rate (dictionary xml note, Probe B). All five
+    # binary record keys are ALWAYS present (binary _say assigns unconditionally); the
+    # XML form carries NO voice fields, so voiceGuid/voiceName bind None — the same
+    # value the binary path yields when its slots are absent.
+    if code == 13:
+        base["text"] = _local_text_or_empty(act_el, "Context")
+        base["voiceGuid"] = None
+        base["voiceName"] = None
+        base["volume"] = _local_int(act_el, "X")
+        base["rate"] = _local_int(act_el, "Y")
+        return base
+
+    # MouseAction (12): Context=context code; Duration is the shared carrier for the
+    # binary m[3]/m[4] pair — scroll clicks on scroll contexts (spec sec 9.3: the
+    # generator "already writes scroll clicks to <Duration>"), click duration on the
+    # rest; X/Y = cursor Move coordinates (m[11]/m[12]). Presence rules mirror binary
+    # _mouse: contextCode/action always, clickDuration/scroll_clicks only when truthy,
+    # x/y only on the Move context. The m[7] `parameter` slot (SPECIAL context) has no
+    # verified XML carrier — never bound here; matches the binary record whenever that
+    # slot is absent (all click/scroll/Move contexts).
+    if code == 12:
+        context = _local_text(act_el, "Context")
+        mouse_name = dictionary.mouse_name(context) if context is not None else None
+        base["contextCode"] = context
+        base["action"] = mouse_name
+        duration = _local_float(act_el, "Duration")
+        if mouse_name in ("scroll_up", "scroll_down", "scroll_left", "scroll_right"):
+            if duration:
+                base["scroll_clicks"] = duration
+        elif duration:
+            # Non-scroll contexts INCLUDING Move: binary _mouse binds clickDuration from
+            # m[4] regardless of context (truthy-gated), so a Move action with a truthy
+            # Duration binds it here too. Duration-as-click-duration on Move is INFERRED
+            # (Probe B's Move sample has m[4]=0.0; no export pairs them) — pending W5
+            # export confirmation (verifier finding 3, wave 1).
+            base["clickDuration"] = duration
+        if context == "Move":
+            base["x"] = _local_int(act_el, "X")
+            base["y"] = _local_int(act_el, "Y")
+        return base
+
+    # Launch (3): Context=path, Context2=args, Context3=workdir (dictionary xml note).
+    # Binary SIMPLE_STRING_FIELDS binds each key only when the slot is present — mirror
+    # with the present-vs-absent idiom (present-but-empty "", missing element omitted).
+    if code == 3:
+        for field, el_name in (("executablePath", "Context"),
+                               ("arguments", "Context2"),
+                               ("workingDirectory", "Context3")):
+            val = _local_text_or_empty(act_el, el_name)
+            if val is not None:
+                base[field] = val
+        return base
 
     # Conditions are fields on the action (spec sec 5), carried on Begin/ElseIf (codes
     # 19/63) only — Else/End (29/20) are block-structure markers with no compare (ground
     # -truth samples 2d/2e: no ConditionStartNameFrom element at all on those two types).
-    # Both records mirror the binary path's shape exactly (actions.py / conditions.py).
+    # Both records mirror the binary path's shape exactly (actions.py / conditions.py):
+    # no duration key, no keyCodes key, no generic context key.
     if code in (19, 63):
         base["condition"] = _parse_condition(act_el, dictionary)
+        return base
     if code in conditions.BLOCK_STRUCTURE_TYPES:
         base["block"] = {"pairing": _local_int(act_el, "ConditionPairing")}
+        return base
 
-    # Payload bindings for Write (23) and SetDecimal (38) only — other Set-family/FreeType
-    # codes resolve names but bind no payload yet (spec sec 9.4 XML note, wave 2 scope).
-    if code == 23:
-        # WriteToLog text carrier is Context; present-but-empty binds "" (ground truth 4.8/4.9).
-        base["text"] = _local_text_or_empty(act_el, "Context")
-    elif code == 38:
-        # DecimalSet carriers INFERRED by IntSet analogy — target ConditionSetName, value
-        # DecimalContext1 (string form, matching the binary path's SetDecimal record keys);
-        # no public XML sample exists, pending the VA import probe (dictionary 0.4.0 note).
-        base["targetVariable"] = _local_text(act_el, "ConditionSetName")
-        base["value"] = _local_text(act_el, "DecimalContext1")
+    # Write (23) and SetClipboard (24): text carrier is Context; present-but-empty binds
+    # "" (ground truth 4.8/4.9), missing element omits the key (binary _opt_string
+    # absence rule). Both are m[6]-string actions with the identical XML carrier.
+    if code in (23, 24):
+        text = _local_text_or_empty(act_el, "Context")
+        if text is not None:
+            base["text"] = text
+        return base
+
+    # SetDecimal (38): target ConditionSetName, value DecimalContext1 (string form,
+    # matching the binary path's SetDecimal record keys) — carriers inferred by IntSet
+    # analogy, then CONFIRMED by the VA import probe (dictionary 0.4.1 note). Both keys
+    # always present, mirroring binary _set_decimal's exact rules (verifier finding 4):
+    # targetVariable = _opt_string(m[15]) — None when the slot is absent, "" when
+    # present-but-empty; value = decimal16(m[25]) with ReadError -> None — the binary
+    # value domain is a decimal string or None, NEVER "", so a present-but-empty
+    # DecimalContext1 (a state no binary profile can encode) binds None.
+    if code == 38:
+        base["targetVariable"] = _local_text_or_empty(act_el, "ConditionSetName")
+        raw_value = _local_text_or_empty(act_el, "DecimalContext1")
+        base["value"] = raw_value if raw_value else None
+        return base
+
+    # --- W5 row 2: Set family + FreeType. Carriers per the banked verbatim export
+    # samples (s4_textset/boolset/intset/condset/freetype, 2.0.0 ground-truth mining)
+    # and dictionary 0.4.1 xml notes; presence rules mirror actions.py where a binary
+    # record exists. ---------------------------------------------------------------
+
+    # SetText (21): target Context, value Context2 xml:space=preserve (10+ export
+    # samples). Binary SIMPLE_STRING_FIELDS rule: each key bound only when its slot is
+    # present — present-but-empty "", missing element omitted.
+    if code == 21:
+        for field, el_name in (("targetVariable", "Context"), ("value", "Context2")):
+            val = _local_text_or_empty(act_el, el_name)
+            if val is not None:
+                base[field] = val
+        return base
+
+    # SetBoolean (36): target Context, mode InputMode — matches the binary m[14] enum
+    # exactly (dictionary note; both polarities sampled: True=0, False=1). Dispatch
+    # mirrors binary _set_boolean to the field: 0 -> True, 1 -> False, any other
+    # non-None mode -> the same honest valueSource marker (modes 2-6 inferred from
+    # dropdown order, unsampled on BOTH paths), absent mode -> no value key at all.
+    if code == 36:
+        base["targetVariable"] = _local_text_or_empty(act_el, "Context")
+        mode = _local_int(act_el, "InputMode")
+        if mode == 0:
+            base["value"] = True
+        elif mode == 1:
+            base["value"] = False
+        elif mode is not None:
+            base["valueSource"] = {
+                "mode": mode, "decoded": False,
+                "note": "Set-Boolean value-source mode 2-6 inferred, unsampled (spec sec 9.4)",
+            }
+        return base
+
+    # SetInteger (37): target ConditionSetName, literal value X int text node — the
+    # ONLY carriers the export samples prove (s4_intset; dictionary note). The binary
+    # record's valueSourceMode has NO evidenced XML carrier: the IntSet sample reads
+    # InputMode=0 on a literal-value action, but FreeType samples read InputMode=1, so
+    # InputMode-as-m[14] is NOT established for this type — key not bound, pending the
+    # W5 export probe. Non-literal-mode operands (random min/max, sourceVariable,
+    # arithmetic operand/operation) are likewise carrier-unevidenced and unbound.
+    # Stale-slot hazard recurs at the XML layer: Context/Context2 carry leftover author
+    # strings on real IntSet exports — never read them as operands.
+    if code == 37:
+        base["targetVariable"] = _local_text_or_empty(act_el, "ConditionSetName")
+        base["value"] = _local_int(act_el, "X")
+        return base
+
+    # SetSmallInt (18, XML ConditionSet — legacy VA1 "condition"): target
+    # ConditionSetName, value X int text node (s4_condset; mandiant/Antaniserse
+    # exports). The binary path cannot decode this code (layout unmapped — VA2 merged
+    # Small Int into Integer; FIELDS_UNDECODED marker), so the XML record is richer
+    # than the binary one by construction; keys follow the IntSet convention.
+    if code == 18:
+        base["targetVariable"] = _local_text_or_empty(act_el, "ConditionSetName")
+        base["value"] = _local_int(act_el, "X")
+        return base
+
+    # QuickInput (40, XML FreeType): text Context (variable tokens legal), Duration =
+    # per-keystroke delay seconds (0.05 observed, s4_freetype). Binary path leaves this
+    # code FIELDS_UNDECODED — no binary record to mirror; the per-key delay gets a
+    # name-level split from the generic duration key (output contract sec 5 precedent,
+    # like scroll_clicks) with a truthy gate (0 = no delay, key omitted). InputMode
+    # reads 1 on both banked samples — semantics unverified, not bound.
+    if code == 40:
+        text = _local_text_or_empty(act_el, "Context")
+        if text is not None:
+            base["text"] = text
+        delay = _local_float(act_el, "Duration")
+        if delay:
+            base["perKeyDelay"] = delay
+        return base
+
+    # Remaining codes: name resolution + the legacy generic bindings (wave 2 scope,
+    # spec sec 9.4 XML note). Payload parity for these codes is future work.
+    duration = _local_float(act_el, "Duration")
+    if duration is not None:
+        base["duration"] = duration
+    context = _local_text(act_el, "Context")
+    if context is not None:
+        base["context"] = context
+    keycodes = _parse_keycodes(act_el, dictionary)
+    if keycodes:
+        base["keyCodes"] = keycodes
     return base
 
 
@@ -200,8 +361,9 @@ def _local_text(parent, name):
 
 def _local_text_or_empty(parent, name):
     """Present-vs-absent text: an element that EXISTS with empty text (ElementTree .text
-    is None) returns "", a missing element returns None. Condition-value binding only —
-    other fields depend on _local_text's absent-on-empty behavior."""
+    is None) returns "", a missing element returns None. The row-1 payload idiom
+    (condition values, Say/Write text, Launch fields, SetDecimal carriers) — remaining
+    generic fields depend on _local_text's absent-on-empty behavior."""
     el = _find_local(parent, name)
     if el is None:
         return None

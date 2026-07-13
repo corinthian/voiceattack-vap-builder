@@ -273,6 +273,8 @@ class KeyDurationParityTest(unittest.TestCase):
                       for a in cmd["actions"] if a.get("type") == "keypress")
 
     def test_key_duration_parity(self):
+        if not any(have(f) for f in CENSUS):
+            self.skipTest("no local reference profiles — parity needs at least one")
         v1 = self._v1()
         compared = mismatches = 0
         bad = []
@@ -640,16 +642,720 @@ class XmlSetWriteTest(unittest.TestCase):
         self.assertEqual(a["value"], "2.25")
 
 
-class FixpointStubTest(unittest.TestCase):
-    """decode(encode(decode(x))) == decode(x) — the encoder's definition of done
-    (round-trip contract). The encoder is out of V2 scope (plan §9); this stub documents
-    the gate and activates when an encoder module appears."""
+# Row-1 payload bindings on the XML path (build spec WP-B / plan W2.5): Say volume/rate,
+# MouseAction context-gated fields, Pause duration, Launch Context/Context2/Context3, and
+# the presence rules the binary path enforces (duration key per family, keyCodes always on
+# key actions, truthiness gates on clickDuration/scroll_clicks). Carriers per dictionary
+# 0.4.1 xml notes and the generator's ground-truth templates.
+XML_ROW1_PAYLOAD_FIXTURE = """<?xml version="1.0" encoding="utf-8"?>
+<Profile xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Id>a1b2c3d4-0000-4000-8000-000000000001</Id>
+  <Name>XML Row1 Payload Fixture</Name>
+  <Commands>
+    <Command>
+      <Id>a1b2c3d4-0000-4000-8000-000000000002</Id>
+      <CommandString>row one sweep</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Ordinal>0</Ordinal>
+          <ActionType>Say</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>say-marker</Context>
+          <X>43</X>
+          <Y>7</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>1</Ordinal>
+          <ActionType>MouseAction</ActionType>
+          <Duration>0.1</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>LC</Context>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>2</Ordinal>
+          <ActionType>MouseAction</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>RC</Context>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>3</Ordinal>
+          <ActionType>MouseAction</ActionType>
+          <Duration>5</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>SF</Context>
+          <X>5</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>4</Ordinal>
+          <ActionType>MouseAction</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>Move</Context>
+          <X>333</X>
+          <Y>444</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>5</Ordinal>
+          <ActionType>Pause</ActionType>
+          <Duration>1.125</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>6</Ordinal>
+          <ActionType>Pause</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>7</Ordinal>
+          <ActionType>Launch</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>C:\\probe\\launch-test.exe</Context>
+          <Context2>--a1 --a2</Context2>
+          <Context3>C:\\probe\\wd</Context3>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>8</Ordinal>
+          <ActionType>Launch</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>C:\\probe\\bare.exe</Context>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>9</Ordinal>
+          <ActionType>KeyDown</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes>
+            <unsignedShort>162</unsignedShort>
+          </KeyCodes>
+          <Context />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>10</Ordinal>
+          <ActionType>PressKey</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes>
+            <unsignedShort>67</unsignedShort>
+          </KeyCodes>
+          <Context />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>11</Ordinal>
+          <ActionType>WriteToLog</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>log line</Context>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>12</Ordinal>
+          <ActionType>MouseAction</ActionType>
+          <Duration>0.25</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>Move</Context>
+          <X>10</X>
+          <Y>20</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>13</Ordinal>
+          <ActionType>DecimalSet</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionSetName></ConditionSetName>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <DecimalContext1></DecimalContext1>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>14</Ordinal>
+          <ActionType>DecimalSet</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+  </Commands>
+</Profile>
+"""
 
-    def test_fixpoint_placeholder(self):
-        try:
-            import vap2.encoder  # noqa: F401
-        except Exception:
-            self.skipTest("encoder not yet built (plan §9 mirror refactor) — fixpoint deferred")
+
+class XmlRow1PayloadTest(unittest.TestCase):
+    """W2.5 parity closeout: every new XML binding carries the binary path's exact record
+    keys, value types, and presence rules (actions.py is the contract)."""
+
+    def setUp(self):
+        self.prof = vap2.decode_bytes(XML_ROW1_PAYLOAD_FIXTURE.encode("utf-8"), DICT)
+        self.actions = self.prof["commands"][0]["actions"]
+
+    def test_say_bindings(self):
+        a = self.actions[0]
+        self.assertEqual(a["actionType"], {"code": 13, "name": "Say"})
+        self.assertEqual(a["text"], "say-marker")
+        self.assertEqual(a["volume"], 43)
+        self.assertEqual(a["rate"], 7)
+        # Binary _say assigns all five keys unconditionally; XML has no voice carrier.
+        self.assertIn("voiceGuid", a)
+        self.assertIn("voiceName", a)
+        self.assertIsNone(a["voiceGuid"])
+        self.assertIsNone(a["voiceName"])
+        self.assertNotIn("context", a)
+        self.assertNotIn("duration", a)
+
+    def test_mouse_click_duration(self):
+        a = self.actions[1]
+        self.assertEqual(a["contextCode"], "LC")
+        self.assertEqual(a["action"], "left_click")
+        self.assertEqual(a["clickDuration"], 0.1)
+        self.assertNotIn("scroll_clicks", a)
+        self.assertNotIn("duration", a)
+        self.assertNotIn("context", a)
+
+    def test_mouse_zero_duration_omits_key(self):
+        # Binary _mouse gates clickDuration on truthiness — 0.0 emits no key.
+        a = self.actions[2]
+        self.assertEqual(a["contextCode"], "RC")
+        self.assertNotIn("clickDuration", a)
+        self.assertNotIn("scroll_clicks", a)
+        self.assertNotIn("duration", a)
+
+    def test_mouse_scroll_clicks(self):
+        a = self.actions[3]
+        self.assertEqual(a["contextCode"], "SF")
+        self.assertEqual(a["action"], "scroll_up")
+        self.assertEqual(a["scroll_clicks"], 5.0)
+        self.assertNotIn("clickDuration", a)
+        self.assertNotIn("duration", a)
+
+    def test_mouse_move_xy(self):
+        a = self.actions[4]
+        self.assertEqual(a["contextCode"], "Move")
+        self.assertEqual(a["action"], "cursor_move")
+        self.assertEqual((a["x"], a["y"]), (333, 444))
+        self.assertNotIn("clickDuration", a)
+        self.assertNotIn("scroll_clicks", a)
+
+    def test_pause_duration(self):
+        a = self.actions[5]
+        self.assertEqual(a["actionType"], {"code": 2, "name": "Pause"})
+        self.assertEqual(a["duration"], 1.125)
+        self.assertNotIn("context", a)
+
+    def test_pause_zero_duration_key_present(self):
+        # Binary _pause: `_opt_double or 0.0` — the key is ALWAYS present on Pause.
+        a = self.actions[6]
+        self.assertEqual(a["duration"], 0.0)
+
+    def test_launch_bindings(self):
+        a = self.actions[7]
+        self.assertEqual(a["actionType"], {"code": 3, "name": "Launch"})
+        self.assertEqual(a["executablePath"], "C:\\probe\\launch-test.exe")
+        self.assertEqual(a["arguments"], "--a1 --a2")
+        self.assertEqual(a["workingDirectory"], "C:\\probe\\wd")
+        self.assertNotIn("context", a)
+        self.assertNotIn("duration", a)
+
+    def test_launch_absent_fields_omitted(self):
+        # Binary SIMPLE_STRING_FIELDS binds only present slots — missing Context2/3
+        # elements must omit the keys, not bind None.
+        a = self.actions[8]
+        self.assertEqual(a["executablePath"], "C:\\probe\\bare.exe")
+        self.assertNotIn("arguments", a)
+        self.assertNotIn("workingDirectory", a)
+
+    def test_keydown_has_no_duration_key(self):
+        # Binary _keys_no_duration: KeyDown/Up/Toggle records never carry duration.
+        a = self.actions[9]
+        self.assertEqual(a["actionType"], {"code": 8, "name": "KeyDown"})
+        self.assertEqual(a["keyCodes"], [{"vk": 162, "name": "lctrl"}])
+        self.assertNotIn("duration", a)
+
+    def test_presskey_zero_duration_key_present(self):
+        # Binary _keys: duration ALWAYS present on PressKey, 0.0 included.
+        a = self.actions[10]
+        self.assertEqual(a["duration"], 0.0)
+        self.assertEqual(a["keyCodes"], [{"vk": 67, "name": "c"}])
+
+    def test_writetolog_has_no_duration_key(self):
+        a = self.actions[11]
+        self.assertEqual(a["text"], "log line")
+        self.assertNotIn("duration", a)
+
+    def test_mouse_move_truthy_duration_binds_click_duration(self):
+        # Binary _mouse binds clickDuration from m[4] regardless of context (truthy-
+        # gated), so Move + truthy Duration must bind it on the XML path too. INFERRED
+        # pending W5 export confirmation (verifier finding 3, wave 1).
+        a = self.actions[12]
+        self.assertEqual(a["contextCode"], "Move")
+        self.assertEqual(a["clickDuration"], 0.25)
+        self.assertEqual((a["x"], a["y"]), (10, 20))
+        self.assertNotIn("scroll_clicks", a)
+        self.assertNotIn("duration", a)
+
+    def test_setdecimal_present_empty_elements(self):
+        # Binary rule (verifier finding 4): targetVariable = _opt_string(m[15]) — a
+        # present-but-empty string slot reads ""; value = decimal16(m[25]) or None —
+        # the value domain is a decimal string or None, NEVER "", so an empty
+        # DecimalContext1 binds None.
+        a = self.actions[13]
+        self.assertEqual(a["actionType"], {"code": 38, "name": "SetDecimal"})
+        self.assertIn("targetVariable", a)
+        self.assertIn("value", a)
+        self.assertEqual(a["targetVariable"], "")
+        self.assertIsNone(a["value"])
+
+    def test_setdecimal_absent_elements(self):
+        # Missing carrier elements mirror absent binary slots: both keys still present
+        # (binary _set_decimal assigns unconditionally), both None.
+        a = self.actions[14]
+        self.assertEqual(a["actionType"], {"code": 38, "name": "SetDecimal"})
+        self.assertIn("targetVariable", a)
+        self.assertIn("value", a)
+        self.assertIsNone(a["targetVariable"])
+        self.assertIsNone(a["value"])
+
+
+# W5 row 2: Set family + FreeType. CommandAction bodies lifted VERBATIM from the banked
+# ground-truth export samples (s4_textset / s4_boolset_true / s4_boolset_false / s4_intset
+# / s4_condset / s4_freetype, 2.0.0 mining) — including the _caption/Caption noise and the
+# IntSet's stale author strings in Context/Context2 (the documented XML-layer stale-slot
+# hazard). Two additions are NOT sample-lifted and are labeled: a zero-delay FreeType
+# (truthy-gate check) and an InputMode=3 BooleanSet (binary-mirror valueSource dispatch).
+XML_ROW2_SET_FIXTURE = """<?xml version="1.0" encoding="utf-8"?>
+<Profile xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Id>d4e5f6a7-0000-4000-8000-000000000001</Id>
+  <Name>XML Row2 Set Fixture</Name>
+  <Commands>
+    <Command>
+      <Id>d4e5f6a7-0000-4000-8000-000000000002</Id>
+      <CommandString>set family sweep</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <PairingSet>false</PairingSet>
+          <PairingSetElse>false</PairingSetElse>
+          <Ordinal>0</Ordinal>
+          <ConditionMet xsi:nil="true" />
+          <IndentLevel>0</IndentLevel>
+          <ConditionSkip>false</ConditionSkip>
+          <Id>95a33a3c-5da5-4f2b-9ee3-0f47fd01840f</Id>
+          <ActionType>TextSet</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>VxFile</Context>
+          <Context2 xml:space="preserve">TestData\\TestConsole.exe</Context2>
+          <Context3 />
+          <Context4 />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>0</InputMode>
+          <ConditionSetName />
+          <ConditionSetCondition />
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <DecimalContext1>0</DecimalContext1>
+          <Disabled>false</Disabled>
+        </CommandAction>
+        <CommandAction>
+          <_caption>Set Boolean [addressInput] to True</_caption>
+          <Ordinal>1</Ordinal>
+          <ConditionMet xsi:nil="true" />
+          <IndentLevel>0</IndentLevel>
+          <Caption>Set Boolean [addressInput] to True</Caption>
+          <Id>626c2426-68a2-4201-b386-14ef4f081d37</Id>
+          <ActionType>BooleanSet</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>addressInput</Context>
+          <Context2 />
+          <Context3 />
+          <Context4 />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>0</InputMode>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <Disabled>false</Disabled>
+        </CommandAction>
+        <CommandAction>
+          <_caption>Set Boolean [jumping] to False</_caption>
+          <Ordinal>2</Ordinal>
+          <IndentLevel>0</IndentLevel>
+          <Caption>Set Boolean [jumping] to False</Caption>
+          <Id>199096b0-fce3-498f-afb5-2c1e43ce7ba2</Id>
+          <ActionType>BooleanSet</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>jumping</Context>
+          <Context2 />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>1</InputMode>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <Disabled>false</Disabled>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>3</Ordinal>
+          <IndentLevel>0</IndentLevel>
+          <Id>7dda3bdc-d27a-4265-93b4-032ac6f65565</Id>
+          <ActionType>IntSet</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>VxArgs</Context>
+          <Context2 xml:space="preserve">title</Context2>
+          <Context3 />
+          <Context4 />
+          <X>1</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>0</InputMode>
+          <ConditionSetName xml:space="preserve">VxRow</ConditionSetName>
+          <ConditionSetCondition />
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <Disabled>false</Disabled>
+        </CommandAction>
+        <CommandAction>
+          <_caption>Set small int (condition) [speed] value to 3</_caption>
+          <Ordinal>4</Ordinal>
+          <IndentLevel>0</IndentLevel>
+          <Caption>Set small int (condition) [speed] value to 3</Caption>
+          <Id>71a4f5a7-5d65-4198-9654-081fa55d4805</Id>
+          <ActionType>ConditionSet</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <X>3</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>0</InputMode>
+          <ConditionSetName xml:space="preserve">speed</ConditionSetName>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <Disabled>false</Disabled>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>5</Ordinal>
+          <IndentLevel>0</IndentLevel>
+          <Id>38576152-0315-4af1-b663-0b73d40d70db</Id>
+          <ActionType>FreeType</ActionType>
+          <Duration>0.05</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>{TXT:System1}</Context>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>1</InputMode>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <Disabled>false</Disabled>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>6</Ordinal>
+          <IndentLevel>0</IndentLevel>
+          <ActionType>FreeType</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>plain text</Context>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>1</InputMode>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>7</Ordinal>
+          <IndentLevel>0</IndentLevel>
+          <ActionType>BooleanSet</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>toggler</Context>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>3</InputMode>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+  </Commands>
+</Profile>
+"""
+
+
+class XmlRow2SetFamilyTest(unittest.TestCase):
+    """W5 row 2 bindings: record equality with the binary shape wherever a binary record
+    exists (SetText/SetBoolean/SetInteger per actions.py), sample-proven fields only for
+    the binary-undecoded codes (SetSmallInt 18, QuickInput 40 — FIELDS_UNDECODED on the
+    binary path, so the XML record is richer by construction)."""
+
+    def setUp(self):
+        self.prof = vap2.decode_bytes(XML_ROW2_SET_FIXTURE.encode("utf-8"), DICT)
+        self.actions = self.prof["commands"][0]["actions"]
+
+    def test_settext_bindings(self):
+        a = self.actions[0]
+        self.assertEqual(a["actionType"], {"code": 21, "name": "SetText"})
+        self.assertEqual(a["targetVariable"], "VxFile")
+        self.assertEqual(a["value"], "TestData\\TestConsole.exe")
+        self.assertNotIn("context", a)
+        self.assertNotIn("duration", a)
+
+    def test_setboolean_true(self):
+        a = self.actions[1]
+        self.assertEqual(a["actionType"], {"code": 36, "name": "SetBoolean"})
+        self.assertEqual(a["targetVariable"], "addressInput")
+        self.assertIs(a["value"], True)
+        self.assertNotIn("valueSource", a)
+        self.assertNotIn("context", a)
+
+    def test_setboolean_false(self):
+        a = self.actions[2]
+        self.assertEqual(a["targetVariable"], "jumping")
+        self.assertIs(a["value"], False)
+        self.assertNotIn("valueSource", a)
+
+    def test_setboolean_other_mode_mirrors_binary_marker(self):
+        # Not sample-lifted: InputMode 3 must produce the binary path's exact honest
+        # marker for unsampled modes 2-6 (actions.py _set_boolean), never a guessed value.
+        a = self.actions[7]
+        self.assertEqual(a["targetVariable"], "toggler")
+        self.assertNotIn("value", a)
+        self.assertEqual(a["valueSource"], {
+            "mode": 3, "decoded": False,
+            "note": "Set-Boolean value-source mode 2-6 inferred, unsampled (spec sec 9.4)",
+        })
+
+    def test_setinteger_literal_and_stale_slot_hazard(self):
+        a = self.actions[3]
+        self.assertEqual(a["actionType"], {"code": 37, "name": "SetInteger"})
+        self.assertEqual(a["targetVariable"], "VxRow")
+        self.assertEqual(a["value"], 1)
+        # Stale author strings in Context/Context2 must NOT bind as operands. (The
+        # binary record's mode-source field is named `source`, which COLLIDES with the
+        # XML provenance key source="xml" — flagged for the schema owners; it cannot be
+        # asserted absent here.)
+        self.assertNotIn("context", a)
+        for key in ("sourceVariable", "min", "max", "operand", "operation"):
+            self.assertNotIn(key, a)
+        self.assertEqual(a["source"], "xml")  # provenance only, never a mode source
+        # valueSourceMode is deliberately unbound: no evidenced XML carrier (the W5
+        # export probe owns closing this) — asserting its absence keeps the record
+        # honest until a carrier is proven.
+        self.assertNotIn("valueSourceMode", a)
+
+    def test_setsmallint_conditionset(self):
+        a = self.actions[4]
+        self.assertEqual(a["actionType"], {"code": 18, "name": "SetSmallInt"})
+        self.assertEqual(a["targetVariable"], "speed")
+        self.assertEqual(a["value"], 3)
+        self.assertNotIn("fieldsDecoded", a)
+
+    def test_freetype_text_and_per_key_delay(self):
+        a = self.actions[5]
+        self.assertEqual(a["actionType"], {"code": 40, "name": "QuickInput"})
+        self.assertEqual(a["text"], "{TXT:System1}")
+        self.assertEqual(a["perKeyDelay"], 0.05)
+        # Name-level split: the Duration element is the per-key delay here, never the
+        # generic duration key.
+        self.assertNotIn("duration", a)
+        self.assertNotIn("context", a)
+
+    def test_freetype_zero_delay_omits_key(self):
+        # Not sample-lifted: truthy gate, matching the clickDuration precedent.
+        a = self.actions[6]
+        self.assertEqual(a["text"], "plain text")
+        self.assertNotIn("perKeyDelay", a)
+
+
+class Cs2BinaryXmlParityTest(unittest.TestCase):
+    """W2.5 gate: binary decode of the CS2 reference profile vs XML decode of the profile
+    the CURRENT generator emits from cities_skylines_2_conditional.json — field-identical
+    action records for every row-1 type present, matched per command phrase. GUIDs and
+    profile/command-level metadata (offsets, category provenance) are excluded; the action
+    record is the contract."""
+
+    BINARY = "Cities Skylines II-Profile.vap"
+    SOURCE_JSON = os.path.join(ROOT, "cities_skylines_2_conditional.json")
+    GENERATOR = os.path.join(ROOT, "skills", "voiceattack-generator", "scripts",
+                             "vap_generator.py")
+
+    # The ONLY legitimate command-set divergence in this pair: the reference profile's
+    # zoom command was extended inside VoiceAttack after generation (it carries the
+    # SetDecimal/Else/Write import-probe block), which also changed its phrase. Any
+    # other one-sided command is a decode/generate defect and must FAIL — intersection
+    # matching let a dropped command pass silently (verifier finding 2, wave 1).
+    KNOWN_ONLY_BINARY = {"zoom [out; in] [more;]"}
+    KNOWN_ONLY_XML = {"zoom [out; in]"}
+
+    # Provenance keys, per source: binary carries offset/head/guid + a confidence tag,
+    # XML carries source. Neither is action payload.
+    _STRIP = {"offset", "head", "guid", "source"}
+
+    @classmethod
+    def _normalize(cls, action):
+        out = {k: v for k, v in action.items() if k not in cls._STRIP}
+        at = dict(out["actionType"])
+        at.pop("confidence", None)
+        out["actionType"] = at
+        return out
+
+    @staticmethod
+    def _by_phrase(prof):
+        """Document-order command lists per phrase, so duplicate phrases pair 1st-to-1st,
+        2nd-to-2nd — never last-wins collapsed."""
+        grouped = {}
+        for c in prof["commands"]:
+            grouped.setdefault(c["phrase"], []).append(c)
+        return grouped
+
+    def test_row1_field_parity(self):
+        require(self.BINARY)
+        if not (os.path.exists(self.SOURCE_JSON) and os.path.exists(self.GENERATOR)):
+            self.skipTest("generator or cities_skylines_2_conditional.json missing")
+        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            out_vap = os.path.join(tmp, "cs2_generated.vap")
+            proc = subprocess.run(
+                [sys.executable, self.GENERATOR, self.SOURCE_JSON, out_vap],
+                capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr or proc.stdout)
+            xml_prof = vap2.decode_file(out_vap, DICT)
+        bin_prof = decode(self.BINARY)
+
+        bin_cmds = self._by_phrase(bin_prof)
+        xml_cmds = self._by_phrase(xml_prof)
+        # Phrase multisets must match up to the documented divergence: a command missing
+        # from either side fails loudly, it never just shrinks the intersection.
+        self.assertEqual(set(bin_cmds) - set(xml_cmds), self.KNOWN_ONLY_BINARY,
+                         "commands only in the binary decode")
+        self.assertEqual(set(xml_cmds) - set(bin_cmds), self.KNOWN_ONLY_XML,
+                         "commands only in the XML decode")
+        common = sorted(set(bin_cmds) & set(xml_cmds))
+        self.assertGreater(len(common), 0, "no phrase-matched commands — pair broken")
+        for phrase in common:
+            self.assertEqual(len(bin_cmds[phrase]), len(xml_cmds[phrase]),
+                             "duplicate count differs for phrase %r" % phrase)
+
+        covered = {}
+        mismatches = []
+        compared = 0
+        for phrase in common:
+            for b_cmd, x_cmd in zip(bin_cmds[phrase], xml_cmds[phrase]):
+                compared += 1
+                b_acts = [self._normalize(a) for a in b_cmd["actions"]]
+                x_acts = [self._normalize(a) for a in x_cmd["actions"]]
+                self.assertEqual(len(b_acts), len(x_acts),
+                                 "action count differs on %r" % phrase)
+                for b, x in zip(b_acts, x_acts):
+                    name = b["actionType"]["name"]
+                    covered[name] = covered.get(name, 0) + 1
+                    if b != x:
+                        mismatches.append((phrase, b["index"], name, b, x))
+        sys.stderr.write(
+            "\n[CS2 binary-vs-XML parity] commands=%d actions-per-type=%s mismatches=%d\n"
+            % (compared, sorted(covered.items()), len(mismatches)))
+        self.assertEqual(mismatches, [], "field mismatches: %s" % mismatches[:3])
+        # The pair must actually exercise the conditional row-1 core, or the gate is hollow.
+        for must in ("PressKey", "BeginCondition", "ElseIf", "EndCondition"):
+            self.assertIn(must, covered, "CS2 pair no longer exercises %s" % must)
 
 
 class AuditGateTest(unittest.TestCase):
@@ -672,6 +1378,43 @@ class AuditGateTest(unittest.TestCase):
             gen_src = f.read()
         report = tools.audit(d, decoder_mod, gen_mod, gen_src)
         self.assertEqual(report["fail_count"], 0, report)
+
+    def test_action_type_parked_vs_pending(self):
+        """W6: the audit is gen2-aware and parked-aware. Deliberately-deferred types
+        report as PARKED; a dictionary type that is emit-ready but neither emitted nor
+        parked reports as PENDING (a real adopt-or-park decision), never buried."""
+        import importlib.util
+        tools_path = os.path.join(ROOT, "schema", "dictionary_tools.py")
+        gen_path = os.path.join(ROOT, "skills", "voiceattack-generator", "scripts", "vap_generator.py")
+        if not (os.path.exists(tools_path) and os.path.exists(gen_path)):
+            self.skipTest("audit tooling or generator missing")
+        spec = importlib.util.spec_from_file_location("dictionary_tools", tools_path)
+        tools = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(tools)
+        d = tools.load_dict()
+        decoder_mod = tools.load_tool_module(__import__("pathlib").Path(
+            os.path.join(SCRIPTS, "vap2", "names.py")))
+        gen_mod = tools.load_tool_module(__import__("pathlib").Path(gen_path))
+        with open(gen_path) as f:
+            gen_src = f.read()
+        at = tools.audit(d, decoder_mod, gen_mod, gen_src)["action_types"]
+
+        # No orphan: everything gen2 emits exists in the dictionary.
+        self.assertEqual(at["orphans_generator_handles_not_in_dict"], [])
+        # The five shipped dark types are emitted; the SetSmallInt->IntSet normalization
+        # means its decode-only "ConditionSet" string is NOT credited as emitted.
+        self.assertIn("StartDictation", at["emitted_by_gen2"])
+        self.assertIn("IntSet", at["emitted_by_gen2"])
+        self.assertNotIn("ConditionSet", at["emitted_by_gen2"])
+        # Deliberately-deferred types are parked, not pending.
+        for parked in ("ExecuteCommand", "KillCommand", "WhileStart", "WhileEnd",
+                       "PauseVariable", "ExitCommand", "ConditionSet"):
+            self.assertIn(parked, at["parked_deferred_by_design"])
+            self.assertNotIn(parked, at["pending_dict_xml_types_not_handled_by_generator"])
+        # W6 gate closed: SetClipboard (the one formerly-pending emit-ready type) is now
+        # wired, so nothing emit-ready is left pending.
+        self.assertIn("SetClipboard", at["emitted_by_gen2"])
+        self.assertEqual(at["pending_dict_xml_types_not_handled_by_generator"], [])
 
 
 if __name__ == "__main__":
