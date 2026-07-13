@@ -186,8 +186,81 @@ def _parse_action(act_el, index, dictionary):
         base["value"] = raw_value if raw_value else None
         return base
 
-    # Non-row-1 codes: name resolution + the legacy generic bindings (wave 2 scope,
-    # spec sec 9.4 XML note). Payload parity for these codes is future work, not W2.5.
+    # --- W5 row 2: Set family + FreeType. Carriers per the banked verbatim export
+    # samples (s4_textset/boolset/intset/condset/freetype, 2.0.0 ground-truth mining)
+    # and dictionary 0.4.1 xml notes; presence rules mirror actions.py where a binary
+    # record exists. ---------------------------------------------------------------
+
+    # SetText (21): target Context, value Context2 xml:space=preserve (10+ export
+    # samples). Binary SIMPLE_STRING_FIELDS rule: each key bound only when its slot is
+    # present — present-but-empty "", missing element omitted.
+    if code == 21:
+        for field, el_name in (("targetVariable", "Context"), ("value", "Context2")):
+            val = _local_text_or_empty(act_el, el_name)
+            if val is not None:
+                base[field] = val
+        return base
+
+    # SetBoolean (36): target Context, mode InputMode — matches the binary m[14] enum
+    # exactly (dictionary note; both polarities sampled: True=0, False=1). Dispatch
+    # mirrors binary _set_boolean to the field: 0 -> True, 1 -> False, any other
+    # non-None mode -> the same honest valueSource marker (modes 2-6 inferred from
+    # dropdown order, unsampled on BOTH paths), absent mode -> no value key at all.
+    if code == 36:
+        base["targetVariable"] = _local_text_or_empty(act_el, "Context")
+        mode = _local_int(act_el, "InputMode")
+        if mode == 0:
+            base["value"] = True
+        elif mode == 1:
+            base["value"] = False
+        elif mode is not None:
+            base["valueSource"] = {
+                "mode": mode, "decoded": False,
+                "note": "Set-Boolean value-source mode 2-6 inferred, unsampled (spec sec 9.4)",
+            }
+        return base
+
+    # SetInteger (37): target ConditionSetName, literal value X int text node — the
+    # ONLY carriers the export samples prove (s4_intset; dictionary note). The binary
+    # record's valueSourceMode has NO evidenced XML carrier: the IntSet sample reads
+    # InputMode=0 on a literal-value action, but FreeType samples read InputMode=1, so
+    # InputMode-as-m[14] is NOT established for this type — key not bound, pending the
+    # W5 export probe. Non-literal-mode operands (random min/max, sourceVariable,
+    # arithmetic operand/operation) are likewise carrier-unevidenced and unbound.
+    # Stale-slot hazard recurs at the XML layer: Context/Context2 carry leftover author
+    # strings on real IntSet exports — never read them as operands.
+    if code == 37:
+        base["targetVariable"] = _local_text_or_empty(act_el, "ConditionSetName")
+        base["value"] = _local_int(act_el, "X")
+        return base
+
+    # SetSmallInt (18, XML ConditionSet — legacy VA1 "condition"): target
+    # ConditionSetName, value X int text node (s4_condset; mandiant/Antaniserse
+    # exports). The binary path cannot decode this code (layout unmapped — VA2 merged
+    # Small Int into Integer; FIELDS_UNDECODED marker), so the XML record is richer
+    # than the binary one by construction; keys follow the IntSet convention.
+    if code == 18:
+        base["targetVariable"] = _local_text_or_empty(act_el, "ConditionSetName")
+        base["value"] = _local_int(act_el, "X")
+        return base
+
+    # QuickInput (40, XML FreeType): text Context (variable tokens legal), Duration =
+    # per-keystroke delay seconds (0.05 observed, s4_freetype). Binary path leaves this
+    # code FIELDS_UNDECODED — no binary record to mirror; the per-key delay gets a
+    # name-level split from the generic duration key (output contract sec 5 precedent,
+    # like scroll_clicks) with a truthy gate (0 = no delay, key omitted). InputMode
+    # reads 1 on both banked samples — semantics unverified, not bound.
+    if code == 40:
+        text = _local_text_or_empty(act_el, "Context")
+        if text is not None:
+            base["text"] = text
+        delay = _local_float(act_el, "Duration")
+        if delay:
+            base["perKeyDelay"] = delay
+        return base
+
+    # Remaining codes: name resolution + the legacy generic bindings (wave 2 scope,
+    # spec sec 9.4 XML note). Payload parity for these codes is future work.
     duration = _local_float(act_el, "Duration")
     if duration is not None:
         base["duration"] = duration

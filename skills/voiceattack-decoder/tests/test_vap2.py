@@ -999,6 +999,271 @@ class XmlRow1PayloadTest(unittest.TestCase):
         self.assertIsNone(a["value"])
 
 
+# W5 row 2: Set family + FreeType. CommandAction bodies lifted VERBATIM from the banked
+# ground-truth export samples (s4_textset / s4_boolset_true / s4_boolset_false / s4_intset
+# / s4_condset / s4_freetype, 2.0.0 mining) — including the _caption/Caption noise and the
+# IntSet's stale author strings in Context/Context2 (the documented XML-layer stale-slot
+# hazard). Two additions are NOT sample-lifted and are labeled: a zero-delay FreeType
+# (truthy-gate check) and an InputMode=3 BooleanSet (binary-mirror valueSource dispatch).
+XML_ROW2_SET_FIXTURE = """<?xml version="1.0" encoding="utf-8"?>
+<Profile xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Id>d4e5f6a7-0000-4000-8000-000000000001</Id>
+  <Name>XML Row2 Set Fixture</Name>
+  <Commands>
+    <Command>
+      <Id>d4e5f6a7-0000-4000-8000-000000000002</Id>
+      <CommandString>set family sweep</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <PairingSet>false</PairingSet>
+          <PairingSetElse>false</PairingSetElse>
+          <Ordinal>0</Ordinal>
+          <ConditionMet xsi:nil="true" />
+          <IndentLevel>0</IndentLevel>
+          <ConditionSkip>false</ConditionSkip>
+          <Id>95a33a3c-5da5-4f2b-9ee3-0f47fd01840f</Id>
+          <ActionType>TextSet</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>VxFile</Context>
+          <Context2 xml:space="preserve">TestData\\TestConsole.exe</Context2>
+          <Context3 />
+          <Context4 />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>0</InputMode>
+          <ConditionSetName />
+          <ConditionSetCondition />
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <DecimalContext1>0</DecimalContext1>
+          <Disabled>false</Disabled>
+        </CommandAction>
+        <CommandAction>
+          <_caption>Set Boolean [addressInput] to True</_caption>
+          <Ordinal>1</Ordinal>
+          <ConditionMet xsi:nil="true" />
+          <IndentLevel>0</IndentLevel>
+          <Caption>Set Boolean [addressInput] to True</Caption>
+          <Id>626c2426-68a2-4201-b386-14ef4f081d37</Id>
+          <ActionType>BooleanSet</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>addressInput</Context>
+          <Context2 />
+          <Context3 />
+          <Context4 />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>0</InputMode>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <Disabled>false</Disabled>
+        </CommandAction>
+        <CommandAction>
+          <_caption>Set Boolean [jumping] to False</_caption>
+          <Ordinal>2</Ordinal>
+          <IndentLevel>0</IndentLevel>
+          <Caption>Set Boolean [jumping] to False</Caption>
+          <Id>199096b0-fce3-498f-afb5-2c1e43ce7ba2</Id>
+          <ActionType>BooleanSet</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>jumping</Context>
+          <Context2 />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>1</InputMode>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <Disabled>false</Disabled>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>3</Ordinal>
+          <IndentLevel>0</IndentLevel>
+          <Id>7dda3bdc-d27a-4265-93b4-032ac6f65565</Id>
+          <ActionType>IntSet</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>VxArgs</Context>
+          <Context2 xml:space="preserve">title</Context2>
+          <Context3 />
+          <Context4 />
+          <X>1</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>0</InputMode>
+          <ConditionSetName xml:space="preserve">VxRow</ConditionSetName>
+          <ConditionSetCondition />
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <Disabled>false</Disabled>
+        </CommandAction>
+        <CommandAction>
+          <_caption>Set small int (condition) [speed] value to 3</_caption>
+          <Ordinal>4</Ordinal>
+          <IndentLevel>0</IndentLevel>
+          <Caption>Set small int (condition) [speed] value to 3</Caption>
+          <Id>71a4f5a7-5d65-4198-9654-081fa55d4805</Id>
+          <ActionType>ConditionSet</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <X>3</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>0</InputMode>
+          <ConditionSetName xml:space="preserve">speed</ConditionSetName>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <Disabled>false</Disabled>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>5</Ordinal>
+          <IndentLevel>0</IndentLevel>
+          <Id>38576152-0315-4af1-b663-0b73d40d70db</Id>
+          <ActionType>FreeType</ActionType>
+          <Duration>0.05</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>{TXT:System1}</Context>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>1</InputMode>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <Disabled>false</Disabled>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>6</Ordinal>
+          <IndentLevel>0</IndentLevel>
+          <ActionType>FreeType</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>plain text</Context>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>1</InputMode>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>7</Ordinal>
+          <IndentLevel>0</IndentLevel>
+          <ActionType>BooleanSet</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes />
+          <Context>toggler</Context>
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>3</InputMode>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+  </Commands>
+</Profile>
+"""
+
+
+class XmlRow2SetFamilyTest(unittest.TestCase):
+    """W5 row 2 bindings: record equality with the binary shape wherever a binary record
+    exists (SetText/SetBoolean/SetInteger per actions.py), sample-proven fields only for
+    the binary-undecoded codes (SetSmallInt 18, QuickInput 40 — FIELDS_UNDECODED on the
+    binary path, so the XML record is richer by construction)."""
+
+    def setUp(self):
+        self.prof = vap2.decode_bytes(XML_ROW2_SET_FIXTURE.encode("utf-8"), DICT)
+        self.actions = self.prof["commands"][0]["actions"]
+
+    def test_settext_bindings(self):
+        a = self.actions[0]
+        self.assertEqual(a["actionType"], {"code": 21, "name": "SetText"})
+        self.assertEqual(a["targetVariable"], "VxFile")
+        self.assertEqual(a["value"], "TestData\\TestConsole.exe")
+        self.assertNotIn("context", a)
+        self.assertNotIn("duration", a)
+
+    def test_setboolean_true(self):
+        a = self.actions[1]
+        self.assertEqual(a["actionType"], {"code": 36, "name": "SetBoolean"})
+        self.assertEqual(a["targetVariable"], "addressInput")
+        self.assertIs(a["value"], True)
+        self.assertNotIn("valueSource", a)
+        self.assertNotIn("context", a)
+
+    def test_setboolean_false(self):
+        a = self.actions[2]
+        self.assertEqual(a["targetVariable"], "jumping")
+        self.assertIs(a["value"], False)
+        self.assertNotIn("valueSource", a)
+
+    def test_setboolean_other_mode_mirrors_binary_marker(self):
+        # Not sample-lifted: InputMode 3 must produce the binary path's exact honest
+        # marker for unsampled modes 2-6 (actions.py _set_boolean), never a guessed value.
+        a = self.actions[7]
+        self.assertEqual(a["targetVariable"], "toggler")
+        self.assertNotIn("value", a)
+        self.assertEqual(a["valueSource"], {
+            "mode": 3, "decoded": False,
+            "note": "Set-Boolean value-source mode 2-6 inferred, unsampled (spec sec 9.4)",
+        })
+
+    def test_setinteger_literal_and_stale_slot_hazard(self):
+        a = self.actions[3]
+        self.assertEqual(a["actionType"], {"code": 37, "name": "SetInteger"})
+        self.assertEqual(a["targetVariable"], "VxRow")
+        self.assertEqual(a["value"], 1)
+        # Stale author strings in Context/Context2 must NOT bind as operands. (The
+        # binary record's mode-source field is named `source`, which COLLIDES with the
+        # XML provenance key source="xml" — flagged for the schema owners; it cannot be
+        # asserted absent here.)
+        self.assertNotIn("context", a)
+        for key in ("sourceVariable", "min", "max", "operand", "operation"):
+            self.assertNotIn(key, a)
+        self.assertEqual(a["source"], "xml")  # provenance only, never a mode source
+        # valueSourceMode is deliberately unbound: no evidenced XML carrier (the W5
+        # export probe owns closing this) — asserting its absence keeps the record
+        # honest until a carrier is proven.
+        self.assertNotIn("valueSourceMode", a)
+
+    def test_setsmallint_conditionset(self):
+        a = self.actions[4]
+        self.assertEqual(a["actionType"], {"code": 18, "name": "SetSmallInt"})
+        self.assertEqual(a["targetVariable"], "speed")
+        self.assertEqual(a["value"], 3)
+        self.assertNotIn("fieldsDecoded", a)
+
+    def test_freetype_text_and_per_key_delay(self):
+        a = self.actions[5]
+        self.assertEqual(a["actionType"], {"code": 40, "name": "QuickInput"})
+        self.assertEqual(a["text"], "{TXT:System1}")
+        self.assertEqual(a["perKeyDelay"], 0.05)
+        # Name-level split: the Duration element is the per-key delay here, never the
+        # generic duration key.
+        self.assertNotIn("duration", a)
+        self.assertNotIn("context", a)
+
+    def test_freetype_zero_delay_omits_key(self):
+        # Not sample-lifted: truthy gate, matching the clickDuration precedent.
+        a = self.actions[6]
+        self.assertEqual(a["text"], "plain text")
+        self.assertNotIn("perKeyDelay", a)
+
+
 class Cs2BinaryXmlParityTest(unittest.TestCase):
     """W2.5 gate: binary decode of the CS2 reference profile vs XML decode of the profile
     the CURRENT generator emits from cities_skylines_2_conditional.json — field-identical
