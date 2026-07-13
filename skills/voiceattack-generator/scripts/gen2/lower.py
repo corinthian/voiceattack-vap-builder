@@ -41,7 +41,10 @@ _SIMPLE_TYPES = _KEY_TYPES | _CONDITION_TYPES | {
     "MouseAction", "Pause", "Say", "SetDecimal", "Write",
     # W5 row-2 authoring verbs. NO SetSmallInt here: it is legacy-in (decoded
     # profiles), never authored-out — VA2 merged Small Int into Integer.
-    "SetText", "SetBoolean", "SetInteger", "QuickInput"}
+    "SetText", "SetBoolean", "SetInteger", "QuickInput",
+    # Parameterless dark types (W5 close): authored by their canonical name, no params.
+    "DictationMode", "StopDictation", "ClearDictationBuffer",
+    "StartListening", "StopListening"}
 
 _GROUP_RE = re.compile(r"\[([^\[\]]*)\]")
 _DISPATCH_OPERAND = "{LASTSPOKENCMD}"

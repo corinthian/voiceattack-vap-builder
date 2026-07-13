@@ -44,6 +44,14 @@ WIRED = {
     # SetSmallInt normalized to IntSet (VA2 merge ruling — see _action_xml).
     "SetText", "SetBoolean", "SetInteger", "SetSmallInt", "QuickInput",
     "BeginCondition", "ElseIf", "Else", "EndCondition",
+    # Parameterless dark types (W5 close, plan D3 branch 0): XML ActionType strings
+    # oracle-verified by the W5 Export (dictionary 0.5.0); no carriers, so each emits
+    # via the default _ordinary_xml skeleton (all-default fields) with only its
+    # xml_action_type varying. ExecuteCommand/KillCommand (by-GUID cross-ref),
+    # PauseVariable/ExitCommand (decoder-parked operands), and SoundFile (single
+    # sample) are ground-truthed in the dictionary but DEFERRED — deliberately absent.
+    "DictationMode", "StopDictation", "ClearDictationBuffer",
+    "StartListening", "StopListening",
 }
 # Key-list family (shared template, Duration 0 by definition for the last three).
 _KEY_FAMILY = {"PressKey", "KeyDown", "KeyUp", "KeyToggle"}

@@ -260,5 +260,53 @@ class Row2SyntheticFixpointTest(unittest.TestCase):
                          [c["phrase"] for c in j3["commands"]])
 
 
+class DarkTypeParameterlessFixpointTest(unittest.TestCase):
+    """W5 close (plan D3 branch 0): the five parameterless dark types whose XML
+    ActionType strings were oracle-verified by the W5 Export (dictionary 0.5.0).
+    They carry no operands, so each emits via the default skeleton with only its
+    xml_action_type varying — the round trip proves both the emit name AND the
+    decoder's xml->code reverse map (built from the same dictionary field).
+
+    ExecuteCommand/KillCommand (by-GUID cross-ref), PauseVariable/ExitCommand
+    (decoder-parked operands) and SoundFile (single sample) are deliberately absent:
+    ground-truthed in the dictionary, emission deferred to a future release."""
+
+    # (schema code, canonical name, VA's oracle-verified XML ActionType string)
+    DARK = [
+        (25, "DictationMode", "StartDictation"),
+        (26, "StopDictation", "StopDictation"),
+        (27, "ClearDictationBuffer", "ClearDictation"),
+        (50, "StartListening", "InternalProcess_StartListening"),
+        (51, "StopListening", "InternalProcess_StopListening"),
+    ]
+
+    def test_dark_type_parameterless_fixpoint(self):
+        model = {"profile": {"id": None, "name": "DarkTypes"},
+                 "commands": [{"phrase": "all five", "category": "w5", "actions": [
+                     {"actionType": {"code": c, "name": n}} for c, n, _ in self.DARK]}]}
+
+        xml, warnings = emit(model, GEN2_DICT)
+        self.assertEqual(warnings, [])
+        # Emit side: VA's verbatim XML ActionType strings, in order.
+        emitted = re.findall(r"<ActionType>(.*?)</ActionType>", xml)
+        self.assertEqual(emitted, [x for _, _, x in self.DARK])
+
+        # Decode side: the dictionary-derived xml->code reverse map restores each
+        # canonical name and code exactly.
+        j1 = vap2.decode_bytes(xml.encode("utf-8"))
+        acts = j1["commands"][0]["actions"]
+        self.assertEqual([a["actionType"]["name"] for a in acts],
+                         [n for _, n, _ in self.DARK])
+        self.assertEqual([a["actionType"]["code"] for a in acts],
+                         [c for c, _, _ in self.DARK])
+
+        # Exact fixed point: re-emit is warning-free and records are identical.
+        xml2, warnings2 = emit(schema_input.parse(j1), GEN2_DICT)
+        self.assertEqual(warnings2, [])
+        j2 = vap2.decode_bytes(xml2.encode("utf-8"))
+        self.assertEqual([_normalize(a) for a in j1["commands"][0]["actions"]],
+                         [_normalize(a) for a in j2["commands"][0]["actions"]])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
