@@ -21,6 +21,7 @@ conservative (build spec W4): false positives are worse than misses. Every firin
 reported on the INFO channel with the full alternative->action mapping — never silent.
 """
 
+import itertools
 import re
 
 
@@ -46,6 +47,14 @@ def lower_profile(profile_data, dictionary, no_idiom=False):
     The model is the same shape schema_input.parse returns; infos are the idiom
     compiler's visibility lines (they do NOT count as warnings — auto-lowering is the
     D2 default, not a defect); warnings mirror legacy warn() texts."""
+    if isinstance(profile_data, dict) and "schema_version" in profile_data:
+        # Wrong door (W4 fix-wave finding 4): schema_version marks a schema-JSON
+        # (decoded) document — that input enters the pipeline at stage two.
+        raise LoweringError(
+            "input carries schema_version %r - this is a schema-JSON (decoded) "
+            "document, not the simple authoring format; encode it with "
+            "python3 -m gen2 <input.json> <output.vap> instead"
+            % (profile_data.get("schema_version"),))
     infos = []
     warnings = []
     commands = []
@@ -67,7 +76,9 @@ def _lower_command(cmd, dictionary, no_idiom, info, warn):
         actions = _shorthand_actions(cmd, dictionary, trigger, warn)
 
     if _idiom_fires(cmd, actions, trigger, no_idiom):
-        actions = _compile_idiom(cmd, actions, trigger, info)
+        lowered = _compile_idiom(cmd, actions, trigger, info, warn)
+        if lowered is not None:
+            actions = lowered
 
     records = []
     for a in actions:
@@ -250,21 +261,45 @@ def _idiom_fires(cmd, actions, trigger, no_idiom):
     types = {a.get("type", "PressKey") for a in actions}
     if len(types) != 1 or types & _CONDITION_TYPES:
         return False
+    if next(iter(types)) not in _SIMPLE_TYPES:
+        # Every branch action would be refused downstream — an empty Begin/ElseIf/End
+        # shell helps nobody; pass through so the refusals land as plain warnings
+        # (W4 fix-wave finding 5).
+        return False
+    if all(a == actions[0] for a in actions[1:]):
+        # An overload whose branches are IDENTICAL is meaningless (the double-tap
+        # case) — the same action fires either way; leave the command alone
+        # (W4 fix-wave finding 3; the chord-split hazard stays on the W7 ruling list).
+        return False
     groups = _alternative_groups(trigger)
     if len(groups) != 1 or len(groups[0][0]) != len(actions):
         return False
     return True
 
 
-def _compile_idiom(cmd, actions, trigger, info):
+def _compile_idiom(cmd, actions, trigger, info, warn):
     """Lower N alternatives x N parallel actions into a {LASTSPOKENCMD} dispatch chain
     (contract ruling + amendment): final group -> Ends With; a group followed by
-    anything -> ordered Contains with substring-shadow handling."""
+    anything -> ordered Contains. The branch order is PROVEN by dispatch simulation
+    before anything is emitted (W4 fix-wave ruling, finding 1). Returns the lowered
+    action list, or None when the idiom must not apply (utterance-cap veto) — the
+    caller then passes the command through untouched, which honestly restores exactly
+    what the author wrote."""
     tokens, after = _alternative_groups(trigger)[0]
     final = after.strip() == ""
     operator = "Ends With" if final else "Contains"
+
+    utterances, count = _trigger_utterances(trigger)
+    if utterances is None:
+        warn("Command '%s': overloaded-trigger idiom not applied - the trigger expands "
+             "to %d utterances (cap %d), too many to verify dispatch; passing the "
+             "command through untouched" % (trigger, count, _UTTERANCE_CAP))
+        return None
+    tagged = [(spoken, token) for spoken, token in utterances if token is not None]
+
     branches = _order_branches(list(zip(tokens, actions)), suffix_mode=final,
-                               trigger=trigger, operator=operator)
+                               trigger=trigger, operator=operator,
+                               utterances=tagged)
 
     lowered = []
     for i, (token, action) in enumerate(branches):
@@ -275,18 +310,70 @@ def _compile_idiom(cmd, actions, trigger, info):
         lowered.append(action)
     lowered.append({"type": "EndCondition"})
 
-    info("Command '%s': overloaded-trigger idiom lowered to a %s dispatch chain: %s"
-         % (trigger, operator,
+    # Printable ONLY for a simulation-proven chain: _order_branches has already raised
+    # on any order the simulation could not verify (finding 1 sub-rule 5).
+    info("Command '%s': overloaded-trigger idiom lowered to a %s dispatch chain "
+         "(verified over %d utterances): %s"
+         % (trigger, operator, len(tagged),
             "; ".join("'%s' -> %s" % (t, _describe(a)) for t, a in branches)))
     return lowered
 
 
-def _order_branches(pairs, suffix_mode, trigger, operator):
-    """Branch order follows input order EXCEPT where a token shadows another (contract):
-    under Ends With only a suffix shadows; under Contains any substring shadows. A
-    shadowing pair reorders longest-first (minimal disturbance: the longer token moves
-    just ahead of the token it shadows); identical tokens cannot be resolved by ordering
-    and hard-refuse naming the collision."""
+# Static-enumeration cap (W4 fix-wave ruling): a trigger whose grammar expands beyond
+# this is not verifiable at sane cost — the idiom does NOT fire (warn + pass through).
+_UTTERANCE_CAP = 512
+
+
+def _trigger_utterances(trigger):
+    """Statically enumerate every spoken phrase the trigger grammar produces, tagged
+    with the dispatch-group token each one chose (None on non-dispatch segments),
+    whitespace-normalized the way VA recognizes them. Returns (utterances, count);
+    (None, count) when the expansion exceeds _UTTERANCE_CAP.
+
+    VA matches {LASTSPOKENCMD} against the FULL recognized phrase, so a token can
+    collide with the fixed prefix, the fixed tail, optional-group text, and across
+    word boundaries — which is exactly why collision analysis must happen at the
+    utterance level, never token-vs-token (verifier findings A/B/C/D/M)."""
+    segments = []  # each: list of (text, chosen_dispatch_token_or_None)
+    pos = 0
+    for m in _GROUP_RE.finditer(trigger):
+        if trigger[pos:m.start()]:
+            segments.append([(trigger[pos:m.start()], None)])
+        tokens = [t.strip() for t in m.group(1).split(";")]
+        nonempty = [t for t in tokens if t]
+        has_empty = len(nonempty) < len(tokens)
+        is_dispatch = len(nonempty) >= 2 and not has_empty  # mirrors _alternative_groups
+        options = [(t, t if is_dispatch else None) for t in nonempty]
+        if has_empty or not options:
+            options.append(("", None))
+        segments.append(options)
+        pos = m.end()
+    if trigger[pos:]:
+        segments.append([(trigger[pos:], None)])
+
+    count = 1
+    for seg in segments:
+        count *= len(seg)
+    if count > _UTTERANCE_CAP:
+        return None, count
+
+    out = []
+    for combo in itertools.product(*segments):
+        # Segments keep the trigger's own whitespace; collapse runs the way VA hears
+        # the spoken phrase (an omitted optional word leaves no double space).
+        spoken = re.sub(r"\s+", " ", "".join(text for text, _ in combo)).strip()
+        chosen = [token for _, token in combo if token is not None]
+        out.append((spoken, chosen[0] if chosen else None))
+    return out, count
+
+
+def _order_branches(pairs, suffix_mode, trigger, operator, utterances):
+    """Deterministic candidate orders per the W4 fix-wave ruling: input order first,
+    then longest-token-first (stable); EACH candidate is verified by simulating the
+    compiled chain over every utterance the trigger produces. The first candidate the
+    simulation proves is used; if none survives, HARD-REFUSE naming the colliding
+    token and the utterance that breaks it. Identical tokens are refused up front
+    (no order can ever separate them)."""
     lowered_tokens = [t.lower() for t, _ in pairs]
     dupes = sorted({t for t in lowered_tokens if lowered_tokens.count(t) > 1})
     if dupes:
@@ -295,21 +382,40 @@ def _order_branches(pairs, suffix_mode, trigger, operator):
             "alternative token(s) %s collide under %s and no branch order can resolve "
             "them" % (trigger, dupes, operator))
 
-    ordered = []
-    for token, action in pairs:  # input order, minimally disturbed
-        tok = token.lower()
-        insert_at = None
-        for i, (placed_token, _) in enumerate(ordered):
-            p = placed_token.lower()
-            shadowed = tok.endswith(p) if suffix_mode else (p in tok)
-            if shadowed:  # the longer token must be tested before its shadow
-                insert_at = i
+    candidates = [list(pairs),
+                  sorted(pairs, key=lambda p: -len(p[0]))]  # stable: ties keep input order
+    failure = None
+    for candidate in candidates:
+        failure = _simulate_dispatch(candidate, suffix_mode, utterances)
+        if failure is None:
+            return candidate
+
+    spoken, intended, captured = failure
+    raise LoweringError(
+        "Command '%s': overloaded-trigger idiom cannot dispatch safely - spoken phrase "
+        "'%s' (meant for alternative '%s') is captured by token %s under %s in every "
+        "candidate branch order; write the conditional explicitly or rename the "
+        "alternatives" % (trigger, spoken, intended,
+                          "'%s'" % captured if captured is not None else "no branch",
+                          operator))
+
+
+def _simulate_dispatch(branches, suffix_mode, utterances):
+    """VA-runtime dispatch model: {LASTSPOKENCMD} is the full spoken phrase; Ends With
+    is str.endswith, Contains is substring; branches are tested in order and the first
+    match fires (case-insensitive, VA's text-compare default). Returns None when every
+    utterance fires its OWN branch, else (spoken, intended_token, captured_token)."""
+    for spoken, intended in utterances:
+        s = spoken.lower()
+        fired = None
+        for token, _ in branches:
+            t = token.lower()
+            if (s.endswith(t) if suffix_mode else t in s):
+                fired = token
                 break
-        if insert_at is None:
-            ordered.append((token, action))
-        else:
-            ordered.insert(insert_at, (token, action))
-    return ordered
+        if fired is None or fired.lower() != intended.lower():
+            return (spoken, intended, fired)
+    return None
 
 
 def _describe(action):

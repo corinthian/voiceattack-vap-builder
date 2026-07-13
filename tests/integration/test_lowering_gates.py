@@ -43,6 +43,18 @@ CONDITIONAL = os.path.join(ROOT, "cities_skylines_2_conditional.json")
 GUID_RE = re.compile(r"<(Id|BaseId)>[0-9a-f\-]{36}</(Id|BaseId)>")
 _DURATION_FIELDS = ("duration", "clickDuration", "scroll_clicks")
 
+# Provenance-only normalization — the fixpoint test's exact set (test_fixpoint._STRIP
+# + actionType.confidence), duplicated here so this file stays runnable standalone.
+_STRIP = {"offset", "head", "guid", "source"}
+
+
+def _normalize(action):
+    out = {k: v for k, v in action.items() if k not in _STRIP}
+    at = out.get("actionType")
+    if isinstance(at, dict):
+        out["actionType"] = {k: v for k, v in at.items() if k != "confidence"}
+    return out
+
 
 def require(path):
     if not os.path.exists(path):
@@ -146,10 +158,93 @@ class TrapGateTest(unittest.TestCase):
                     self.assertEqual(a_new.get("block"), a_leg.get("block"),
                                      "%s: block pairing" % loc)
                     condition_count += 1
+                # Full normalized records (W4 fix-wave finding 2a): Say/Write/
+                # SetDecimal/Mouse/Launch payloads must not pass through this gate
+                # blind — the per-dimension asserts above name the frozen fields, this
+                # one closes over everything but provenance.
+                self.assertEqual(_normalize(a_new), _normalize(a_leg),
+                                 "%s: full-record parity" % loc)
 
         # The gate is about the compiled chains: the comparison must have seen them.
         self.assertGreater(condition_count, 0,
                            "no condition records compared - gate compared nothing")
+
+
+class PayloadIdiomTwinTest(unittest.TestCase):
+    """W4 fix-wave finding 2b: the trap-gate fixtures are PressKey-only, so the FIRED
+    idiom path never exercised payload comparison. Here an idiom profile whose branch
+    actions carry payloads (Say, Write, SetDecimal, MouseAction) must lower+emit+decode
+    semantically identical to its hand-written explicit-conditional twin — full
+    normalized records, provenance-only stripping."""
+
+    IDIOM_DOC = {"name": "PayloadTwin", "commands": [
+        {"trigger": "announce [one; two]", "category": "t", "actions": [
+            {"type": "Say", "text": "first thing", "volume": 60, "rate": 1},
+            {"type": "Say", "text": "second thing", "volume": 80, "rate": -1}]},
+        {"trigger": "log [alpha; beta]", "category": "t", "actions": [
+            {"type": "Write", "text": "took alpha {DEC:v}"},
+            {"type": "Write", "text": "took beta {DEC:v}"}]},
+        {"trigger": "level [high; low]", "category": "t", "actions": [
+            {"type": "SetDecimal", "variable": "lvl", "value": 2.5},
+            {"type": "SetDecimal", "variable": "lvl", "value": 0.5}]},
+        {"trigger": "wheel [in; out]", "category": "t", "actions": [
+            {"type": "MouseAction", "action": "scroll_up", "scroll_clicks": 3},
+            {"type": "MouseAction", "action": "scroll_down", "scroll_clicks": 5}]},
+    ]}
+
+    @staticmethod
+    def twin_of(doc):
+        """The hand-written explicit-conditional equivalent (Ends With chain in the
+        idiom compiler's verified order — none of these triggers needs a reorder)."""
+        twin = {"name": doc["name"], "commands": []}
+        for cmd in doc["commands"]:
+            tokens = re.search(r"\[([^\]]*)\]", cmd["trigger"]).group(1).split(";")
+            tokens = [t.strip() for t in tokens]
+            actions = []
+            for i, (token, action) in enumerate(zip(tokens, cmd["actions"])):
+                actions.append({
+                    "type": "BeginCondition" if i == 0 else "ElseIf",
+                    "condition": {"valueType": "Text", "operator": "Ends With",
+                                  "leftOperand": "{LASTSPOKENCMD}", "value": token}})
+                actions.append(dict(action))
+            actions.append({"type": "EndCondition"})
+            twin["commands"].append({"trigger": cmd["trigger"],
+                                     "category": cmd["category"], "actions": actions})
+        return twin
+
+    def test_payload_idiom_matches_explicit_twin(self):
+        from gen2 import names as gen2_names
+        from gen2.emit_profile import emit
+        from gen2.lower import lower_profile
+        dictionary = gen2_names.load()
+
+        model_a, infos_a, warns_a = lower_profile(self.IDIOM_DOC, dictionary)
+        model_b, infos_b, warns_b = lower_profile(self.twin_of(self.IDIOM_DOC),
+                                                  dictionary)
+        self.assertEqual(len(infos_a), 4, "all four idiom commands must fire")
+        self.assertEqual(infos_b, [], "explicit conditionals must not re-fire")
+        self.assertEqual(warns_a + warns_b, [])
+
+        xml_a, _ = emit(model_a, dictionary)
+        xml_b, _ = emit(model_b, dictionary)
+        j_a = vap2.decode_bytes(xml_a.encode("utf-8"))
+        j_b = vap2.decode_bytes(xml_b.encode("utf-8"))
+
+        self.assertEqual([c["phrase"] for c in j_a["commands"]],
+                         [c["phrase"] for c in j_b["commands"]])
+        payload_keys_seen = set()
+        for c_a, c_b in zip(j_a["commands"], j_b["commands"]):
+            acts_a = [_normalize(a) for a in c_a["actions"]]
+            acts_b = [_normalize(a) for a in c_b["actions"]]
+            self.assertEqual(acts_a, acts_b, c_a["phrase"])
+            for a in acts_a:
+                payload_keys_seen |= set(a) & {"text", "volume", "rate",
+                                               "targetVariable", "value",
+                                               "scroll_clicks", "contextCode"}
+        # Tripwire: the payload fields must actually have been part of the comparison.
+        self.assertEqual(payload_keys_seen,
+                         {"text", "volume", "rate", "targetVariable", "value",
+                          "scroll_clicks", "contextCode"})
 
 
 if __name__ == "__main__":

@@ -24,6 +24,7 @@ sys.path.insert(0, SCRIPTS)
 import vap_generator  # noqa: E402  (same skill: the legacy oracle)
 from gen2 import names  # noqa: E402
 from gen2.emit_profile import emit  # noqa: E402
+from gen2 import lower as gen2_lower  # noqa: E402
 from gen2.lower import LoweringError, lower_profile  # noqa: E402
 
 DICT = names.load()
@@ -318,6 +319,111 @@ class IdiomCollisionTest(unittest.TestCase):
     def test_duplicate_tokens_case_insensitive(self):
         with self.assertRaisesRegex(LoweringError, "duplicate"):
             one_command(idiom_cmd(trigger="pan [Up; up]"))
+
+
+class IdiomDispatchSimulationTest(unittest.TestCase):
+    """W4 fix-wave finding 1: collision analysis IS a dispatch simulation over every
+    utterance the trigger grammar produces — VA matches {LASTSPOKENCMD} against the
+    FULL spoken phrase, so tokens collide with the fixed prefix/tail, optional-group
+    text, and across word boundaries. The verifier's five silently-misdispatching
+    constructions (A/B/C/D/M) are pinned here as named regressions, plus the general
+    property: every ACCEPTED lowering dispatches every utterance to its own branch."""
+
+    def assert_refuses(self, trigger, n=2):
+        cmd = idiom_cmd(trigger=trigger, keys=[str(i + 1) for i in range(n)])
+        with self.assertRaisesRegex(LoweringError, "cannot dispatch safely"):
+            one_command(cmd)
+
+    def assert_verified(self, trigger, n=2):
+        """Lower, then independently re-simulate the emitted chain over the trigger's
+        utterances — the acceptance property, reusing the compiler's own simulator."""
+        cmd = idiom_cmd(trigger=trigger, keys=[str(i + 1) for i in range(n)])
+        lowered, infos, _ = one_command(cmd)
+        self.assertEqual(len(infos), 1, "idiom must fire for this construction")
+        branches = []
+        acts = lowered["actions"]
+        suffix_mode = None
+        for i, a in enumerate(acts):
+            if a["actionType"]["name"] in ("BeginCondition", "ElseIf"):
+                cond = a["condition"]
+                suffix_mode = cond["operator"]["name"] == "Ends With"
+                branches.append((cond["value"], acts[i + 1]))
+        utterances, _ = gen2_lower._trigger_utterances(cmd["trigger"])
+        tagged = [(u, t) for u, t in utterances if t is not None]
+        self.assertGreater(len(tagged), 0)
+        failure = gen2_lower._simulate_dispatch(branches, suffix_mode, tagged)
+        self.assertIsNone(failure, "accepted lowering misdispatches: %r" % (failure,))
+        return [t for t, _ in branches]
+
+    def test_verifier_A_prefix_boundary_suffix_refuses(self):
+        # spoken "camera pan up" ends with "n up" (the n comes from "pan").
+        self.assert_refuses("camera pan [n up; up]")
+
+    def test_verifier_B_fixed_prefix_contains_refuses(self):
+        # token 'down' sits in the fixed prefix of every utterance.
+        self.assert_refuses("scroll down [down; up] [fast;]")
+
+    def test_verifier_C_fixed_tail_reorders_correctly(self):
+        # 'no' hides inside the fixed-tail word 'now'; testing 'yes' first resolves it.
+        order = self.assert_verified("zoom [no; yes] now")
+        self.assertEqual(order, ["yes", "no"])
+
+    def test_verifier_D_optional_group_text_refuses(self):
+        # 'right' hides inside the optional group's own text "right now".
+        self.assert_refuses("pan [right; left] [right now;]")
+
+    def test_verifier_M_optional_head_refuses(self):
+        # with the optional head omitted, the short utterance EQUALS the long token.
+        self.assert_refuses("[press;] pan [an; pan an]")
+
+    def test_property_on_all_accepted_constructions(self):
+        for trigger, n in (("pan [up; down]", 2),
+                           ("[press;] pan [up; down]", 2),
+                           ("zoom [out; in] [more;]", 2),
+                           ("game [normal; fast; fastest]", 3),
+                           ("go [fast; very fast]", 2),
+                           ("turn [key one; one]", 2),
+                           ("pan [a; b a; c b a]", 3),
+                           ("game [fast; fastest] [now;]", 2),
+                           ("do [la; plan]", 2)):
+            with self.subTest(trigger=trigger):
+                self.assert_verified(trigger, n)
+
+    def test_refusal_names_utterance_and_token(self):
+        with self.assertRaisesRegex(
+                LoweringError, r"'camera pan up'.*meant for alternative 'up'.*'n up'"):
+            one_command(idiom_cmd(trigger="camera pan [n up; up]"))
+
+    def test_identical_actions_do_not_fire(self):
+        # Finding 3: an overload with identical branches is meaningless (double-tap).
+        cmd = {"trigger": "pan [up; down]", "actions": [
+            {"type": "PressKey", "keys": ["w"]}, {"type": "PressKey", "keys": ["w"]}]}
+        lowered, infos, _ = one_command(cmd)
+        self.assertEqual(infos, [])
+        self.assertEqual(types_of(lowered), ["PressKey", "PressKey"])
+
+    def test_all_refused_types_do_not_fire(self):
+        # Finding 5: no empty Begin/ElseIf/End shell around refused actions.
+        cmd = {"trigger": "warp [in; out]", "actions": [
+            {"type": "Teleport", "which": 1}, {"type": "Teleport", "which": 2}]}
+        lowered, infos, warnings = one_command(cmd)
+        self.assertEqual(infos, [])
+        self.assertEqual(lowered["actions"], [])
+        self.assertEqual(warnings.count("Unknown action type 'Teleport' - skipped"), 2)
+
+    def test_utterance_cap_passes_through_with_warning(self):
+        opt = " ".join("[w%d;]" % i for i in range(10))  # 2^10 optional combos
+        cmd = idiom_cmd(trigger="go [a; b] " + opt)
+        lowered, infos, warnings = one_command(cmd)
+        self.assertEqual(infos, [])
+        self.assertEqual(types_of(lowered), ["PressKey", "PressKey"])
+        self.assertTrue(any("cap" in w and "passing the command through" in w
+                            for w in warnings), warnings)
+
+    def test_wrong_door_schema_json_refused(self):
+        # Finding 4: decoded schema JSON must be routed to python3 -m gen2.
+        with self.assertRaisesRegex(LoweringError, r"schema_version.*-m gen2"):
+            lower({"schema_version": 2, "profile": {"name": "X"}, "commands": []})
 
 
 class LegacyParityTest(unittest.TestCase):
