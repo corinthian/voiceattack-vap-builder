@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 """
-VoiceAttack Profile Generator
-Generates valid .vap XML files from simple JSON input.
+VoiceAttack Profile Generator - LEGACY (deprecated as of 2.1.0).
 
+DEPRECATED: this is the pre-2.1 generator. The active generator is the `gen2` package
+(`scripts/gen2/`) - invoke `python3 -m gen2 <input.json> [output.vap]`. gen2 supersedes
+this file and adds the action types it cannot emit (dictation/listening, clipboard, the
+Set family - TextSet/BooleanSet/IntSet, QuickInput). This file is retained in-tree during
+soak (it still backs the dictionary audit's key/mouse tables) and will be removed in a
+later release; do not add features here.
+
+Generates valid .vap XML files from simple JSON input.
 Supports: PressKey, MouseAction, Pause, KeyDown, KeyUp, KeyToggle, Say,
 SetDecimal, Write (VoiceAttack log), and condition blocks (BeginCondition,
 ElseIf, Else, EndCondition - Text compares only)
 
-Usage: python3 vap_generator.py <input.json> [output.vap]
+Usage (legacy): python3 vap_generator.py <input.json> [output.vap]
 """
 
 import json

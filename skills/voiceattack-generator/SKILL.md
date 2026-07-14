@@ -13,10 +13,17 @@ When the user wants to generate a VoiceAttack profile:
 
 1. Read their JSON input file (or extract from screenshot - see below)
 2. Present command summary and offer review (see "Review Before Generation")
-3. Run the generator: `python3 <skill-dir>/scripts/vap_generator.py <input.json> <output.vap>`
+3. Run the generator (from `<skill-dir>/scripts`): `python3 -m gen2 <input.json> <output.vap>`
 4. Report the output file location and command count
 
-Run with `-h` for full usage details.
+The generator auto-detects its input: the simple authoring format below, or normative
+schema-v1.1 JSON (a decoder output). Run with `-h` for full usage; `--no-idiom` disables
+overloaded-trigger auto-lowering. Exit codes: 0 clean, 1 hard-fail (no file written),
+2 written with warnings.
+
+> The legacy `scripts/vap_generator.py` is retained in-tree during soak but is no longer
+> the entry point — it cannot emit the newer action types (dictation/listening, clipboard,
+> the Set family). Always invoke `gen2`.
 
 ## Screenshot Extraction
 
@@ -128,11 +135,18 @@ Once user confirms, run the generator with the final JSON.
 | KeyDown | keys |
 | KeyUp | keys |
 | KeyToggle | keys (press once = down, again = up) |
-| MouseAction | action, scroll_clicks |
+| MouseAction | action, scroll_clicks; cursor_move takes x, y (a move `duration`/animation is deferred to a future release - a plain move is emitted and the timing dropped with a warning) |
 | Pause | duration (seconds) |
 | Say | text, volume (0-100), rate |
-| SetDecimal | variable, value (number) - sets a decimal variable; XML carrier inferred pending VoiceAttack import probe |
+| SetDecimal | variable, value (number) - sets a decimal variable (carrier VoiceAttack-import confirmed) |
+| SetText | variable, value (string) - sets a text variable |
+| SetBoolean | variable, value (true/false) - sets a boolean variable |
+| SetInteger | variable, value (integer, Int32 range) - sets an integer variable |
+| QuickInput | text - types text into the focused field (variable tokens work) |
+| SetClipboard | text - copies text to the Windows clipboard |
 | Write | text - writes to the VoiceAttack event LOG, not keystrokes; variable tokens like {DEC:var} work |
+| DictationMode / StopDictation / ClearDictationBuffer | (no parameters) - start / stop / clear VoiceAttack dictation |
+| StartListening / StopListening | (no parameters) - start / stop VoiceAttack listening (note: StopListening stops VA hearing further speech) |
 | BeginCondition | condition (required) - opens an if block |
 | ElseIf | condition (required) - else-if branch |
 | Else | (no parameters) - else branch |
@@ -187,3 +201,20 @@ To press multiple keys simultaneously (e.g., Ctrl+V), use a single PressKey acti
 
 - `[word1; word2]` - Alternatives (either triggers command)
 - `[word;]` - Optional word (trailing semicolon)
+
+## Overloaded-Trigger Idiom (auto-lowering)
+
+When a trigger has exactly one alternative group with N options **and** the command has N
+parallel same-type actions, the generator auto-lowers it to a `{LASTSPOKENCMD}` conditional
+dispatch chain — each spoken alternative fires its matching action. So this:
+
+```json
+{"trigger": "zoom [out; in]", "actions": [
+  {"type": "PressKey", "keys": ["f"]},
+  {"type": "PressKey", "keys": ["r"]}]}
+```
+
+means "zoom out" presses `f` and "zoom in" presses `r`. The mapping is proven safe by
+simulating dispatch over every utterance the trigger produces; if two alternatives would
+collide, generation hard-fails rather than emit an ambiguous chain. Disable with
+`--no-idiom` or per-command `"idiom": false`.
