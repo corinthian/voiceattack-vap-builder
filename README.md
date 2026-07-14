@@ -39,7 +39,8 @@ for finer control, you can create your own JSON or ask Claude to give you the JS
 2. Generate the VoiceAttack profile:
 
 ```bash
-python3 skills/voiceattack-generator/scripts/vap_generator.py my_profile.json output.vap
+cd skills/voiceattack-generator/scripts
+python3 -m gen2 my_profile.json output.vap
 ```
 
 3. Import `output.vap` into VoiceAttack
@@ -78,21 +79,27 @@ See `skills/voiceattack-generator/examples/` for complete examples.
 
 ## Supported Actions
 
-This generator covers input simulation plus conditional dispatch and decimal variables — suitable for gaming, accessibility macros, and simple automation. Special characters (`&`, `<`, `>`) in trigger phrases are automatically XML-escaped.
+This generator covers input simulation, conditional dispatch, variables, and application launch — suitable for gaming, accessibility macros, and automation. Special characters (`&`, `<`, `>`) in trigger phrases are automatically XML-escaped.
 
 | Action | Description |
 |--------|-------------|
 | PressKey | Press and release a key (chords via left/right modifiers) |
 | KeyDown / KeyUp | Hold or release a key (for combos like Ctrl+C) |
 | KeyToggle | Toggle key state (press once = down, again = up) |
-| MouseAction | Buttons (left, middle, right, back, forward) with click/double/triple/down/up/toggle, and scroll (up, down, left, right) |
+| MouseAction | Buttons (left, middle, right, back, forward) with click/double/triple/down/up/toggle, scroll (up, down, left, right), and cursor move to X/Y |
 | Pause | Wait between actions |
 | Say | Text-to-speech output |
-| SetDecimal | Set a decimal variable |
+| Variables | Set a decimal / text / boolean / integer variable (SetDecimal, SetText, SetBoolean, SetInteger) |
+| QuickInput | Type text into the focused field |
+| SetClipboard | Copy text to the Windows clipboard |
 | Write | Write a line to the VoiceAttack event log (variable tokens like `{DEC:var}` work) |
+| Dictation / Listening | Start / stop / clear dictation; start / stop VoiceAttack listening |
+| Launch | Run an application (path, arguments, working directory) |
 | Conditionals | Text-compare `if` / `else if` / `else` blocks (BeginCondition / ElseIf / Else / EndCondition), nestable |
 
-**Not supported:** Loops, compound (AND/OR) conditions, non-Text condition types, launching applications, clipboard operations, or executing other commands. For those features, edit the profile directly in VoiceAttack after import.
+Trigger overloading is auto-lowered: `"[out; in]"` with two parallel actions dispatches each spoken alternative to its own action.
+
+**Not supported:** Loops, compound (AND/OR) conditions, non-Text condition types, executing/killing other commands, animated (timed) mouse moves, and playing sound files. For those, edit the profile directly in VoiceAttack after import.
 
 ## Command Phrase Syntax
 

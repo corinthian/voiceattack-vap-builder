@@ -19,6 +19,7 @@ Run:  python3 -m unittest discover -s tests/integration -t . -v
 """
 
 import glob
+import json
 import os
 import re
 import subprocess
@@ -32,7 +33,7 @@ sys.path.insert(0, os.path.join(ROOT, "skills", "voiceattack-decoder", "scripts"
 sys.path.insert(0, os.path.join(ROOT, "skills", "voiceattack-generator", "scripts"))
 
 import vap2  # noqa: E402
-from gen2 import names, schema_input  # noqa: E402
+from gen2 import cli, names, schema_input  # noqa: E402
 from gen2.emit_profile import emit, route_actions  # noqa: E402
 
 DICT = names.load()  # gen2's own loader; vap2 loads its own dictionary internally
@@ -154,26 +155,31 @@ class W2SchemaInputTest(unittest.TestCase):
                 self.assertTrue(xml.startswith("<?xml"))
 
 
-class MoveClickDurationRoundTripTest(unittest.TestCase):
-    """Verify wave 1 finding 3: a Move record carrying a clickDuration (binary m[4] is
-    read unconditionally) emits Duration alongside X/Y, and vap2's XML path binds it
-    back to the same record shape (WP-B's W2.5 parity fix) — emit -> decode is lossless
-    for this shape. The Move+Duration XML carrier is inferred pending W5 export."""
+class MoveDurationDeferredTest(unittest.TestCase):
+    """W7 correction (2026-07-14): the old "Move duration -> Duration" behavior was an
+    inference the W7 Export DISPROVED — VA carries move animation in DecimalContext2 +
+    ConditionStart* slots, never Duration. Animated move is deferred to a future release,
+    so a Move record carrying a clickDuration now emits a PLAIN move (X/Y only) and warns;
+    the dropped timing never becomes a Duration VA would ignore for movement."""
 
-    def test_move_with_click_duration_round_trips(self):
+    def test_move_with_duration_emits_plain_move_and_warns(self):
         model = {"profile": {"id": None, "name": "RT"},
                  "commands": [{"phrase": "move it", "category": "mouse", "actions": [
                      {"actionType": {"code": 12, "name": "MouseAction"},
                       "contextCode": "Move", "action": "cursor_move",
                       "clickDuration": 0.1, "x": 333, "y": 444}]}]}
         xml, warnings = emit(model, DICT)
-        self.assertEqual(warnings, [])
+        # Loud, not silent: exactly one warning names the deferred animated move.
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("animated move", warnings[0])
+        # Duration is NOT written; the move round-trips as plain X/Y with no timing.
+        self.assertIn("<Duration>0</Duration>", xml)
         decoded = vap2.decode_bytes(xml.encode("utf-8"))
         action = decoded["commands"][0]["actions"][0]
         self.assertEqual(action["contextCode"], "Move")
-        self.assertEqual(action.get("clickDuration"), 0.1)
         self.assertEqual(action.get("x"), 333)
         self.assertEqual(action.get("y"), 444)
+        self.assertIsNone(action.get("clickDuration"))
 
 
 class Row2RoundTripTest(unittest.TestCase):
@@ -249,6 +255,51 @@ class Row2RoundTripTest(unittest.TestCase):
              "text": "typed", "perKeyDelay": 0.05},
         ]
         self.assertEqual([self.normalize(a) for a in actions], expected)
+
+
+class Gen2CliCutoverTest(unittest.TestCase):
+    """2.1 cutover: gen2's CLI is the user entry point and accepts the SIMPLE authoring
+    format (auto-detected against schema-JSON), emitting the newer action types the
+    legacy generator cannot. Also verifies the schema-JSON door still routes correctly."""
+
+    def _run(self, doc, name):
+        d = tempfile.mkdtemp()
+        inp = os.path.join(d, name)
+        out = os.path.join(d, "out.vap")
+        with open(inp, "w", encoding="utf-8") as f:
+            json.dump(doc, f)
+        rc = cli.main([inp, out])
+        xml = open(out, encoding="utf-8").read() if os.path.exists(out) else ""
+        return rc, xml
+
+    def test_simple_door_emits_new_types(self):
+        rc, xml = self._run({"name": "Cutover", "commands": [
+            {"trigger": "start dictation", "actions": [{"type": "DictationMode"}]},
+            {"trigger": "copy it", "actions": [{"type": "SetClipboard", "text": "hi"}]},
+            {"trigger": "set n", "actions": [{"type": "SetInteger", "variable": "n", "value": 7}]},
+            {"trigger": "fire", "key": "space"},
+        ]}, "simple.json")
+        self.assertEqual(rc, 0)
+        for at in ("StartDictation", "SetClipboard", "IntSet", "PressKey"):
+            self.assertIn("<ActionType>%s</ActionType>" % at, xml)
+
+    def test_simple_door_lowers_overloaded_idiom(self):
+        rc, xml = self._run({"name": "Idiom", "commands": [
+            {"trigger": "zoom [out; in]", "actions": [
+                {"type": "PressKey", "keys": ["f"]},
+                {"type": "PressKey", "keys": ["r"]}]},
+        ]}, "idiom.json")
+        self.assertEqual(rc, 0)
+        # The overloaded trigger auto-lowered to a condition dispatch chain.
+        self.assertIn("<ActionType>ConditionStart</ActionType>", xml)
+
+    def test_schema_door_still_routes(self):
+        rc, xml = self._run({"schema_version": 2, "profile": {"id": None, "name": "S"},
+                             "commands": [{"phrase": "hi", "category": None, "actions": [
+                                 {"actionType": {"code": 24, "name": "SetClipboard"},
+                                  "text": "x"}]}]}, "schema.json")
+        self.assertEqual(rc, 0)
+        self.assertIn("<ActionType>SetClipboard</ActionType>", xml)
 
 
 if __name__ == "__main__":
