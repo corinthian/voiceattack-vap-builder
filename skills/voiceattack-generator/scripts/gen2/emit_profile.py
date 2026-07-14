@@ -618,11 +618,15 @@ def _action_xml(plan, dictionary, warn):
             x = _int_str(rec.get("x"), 0, "MouseAction x", warn)
             y = _int_str(rec.get("y"), 0, "MouseAction y", warn)
             if rec.get("clickDuration"):
-                # Binary m[4] is read unconditionally, so a Move record can carry a
-                # click duration; emit it alongside X/Y rather than dropping it silently
-                # (verify wave 1 finding 3). The Move+Duration XML carrier is INFERRED
-                # pending the W5 export confirmation.
-                duration_str = _format_duration(rec["clickDuration"], warn)
+                # ANIMATED move is a future release. The earlier "Move duration ->
+                # Duration" carrier was an inference the W7 Export (2026-07-14) DISPROVED:
+                # VA carries move animation in DecimalContext2 (timing) + ConditionStartValue
+                # (steps) + ConditionStart* flags, never in Duration (click-hold only, 0 on
+                # Move). Emit a plain move and drop the timing loudly rather than write a
+                # Duration VA ignores for movement.
+                warn("Command action: cursor Move carries a duration %r - animated move "
+                     "(timing/steps/ease) is deferred to a future release; emitting a "
+                     "plain move without it" % (rec["clickDuration"],))
         elif rec.get("clickDuration") is not None:
             duration_str = _format_duration(rec["clickDuration"], warn)
 

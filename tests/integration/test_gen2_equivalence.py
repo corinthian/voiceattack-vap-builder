@@ -154,26 +154,31 @@ class W2SchemaInputTest(unittest.TestCase):
                 self.assertTrue(xml.startswith("<?xml"))
 
 
-class MoveClickDurationRoundTripTest(unittest.TestCase):
-    """Verify wave 1 finding 3: a Move record carrying a clickDuration (binary m[4] is
-    read unconditionally) emits Duration alongside X/Y, and vap2's XML path binds it
-    back to the same record shape (WP-B's W2.5 parity fix) — emit -> decode is lossless
-    for this shape. The Move+Duration XML carrier is inferred pending W5 export."""
+class MoveDurationDeferredTest(unittest.TestCase):
+    """W7 correction (2026-07-14): the old "Move duration -> Duration" behavior was an
+    inference the W7 Export DISPROVED — VA carries move animation in DecimalContext2 +
+    ConditionStart* slots, never Duration. Animated move is deferred to a future release,
+    so a Move record carrying a clickDuration now emits a PLAIN move (X/Y only) and warns;
+    the dropped timing never becomes a Duration VA would ignore for movement."""
 
-    def test_move_with_click_duration_round_trips(self):
+    def test_move_with_duration_emits_plain_move_and_warns(self):
         model = {"profile": {"id": None, "name": "RT"},
                  "commands": [{"phrase": "move it", "category": "mouse", "actions": [
                      {"actionType": {"code": 12, "name": "MouseAction"},
                       "contextCode": "Move", "action": "cursor_move",
                       "clickDuration": 0.1, "x": 333, "y": 444}]}]}
         xml, warnings = emit(model, DICT)
-        self.assertEqual(warnings, [])
+        # Loud, not silent: exactly one warning names the deferred animated move.
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("animated move", warnings[0])
+        # Duration is NOT written; the move round-trips as plain X/Y with no timing.
+        self.assertIn("<Duration>0</Duration>", xml)
         decoded = vap2.decode_bytes(xml.encode("utf-8"))
         action = decoded["commands"][0]["actions"][0]
         self.assertEqual(action["contextCode"], "Move")
-        self.assertEqual(action.get("clickDuration"), 0.1)
         self.assertEqual(action.get("x"), 333)
         self.assertEqual(action.get("y"), 444)
+        self.assertIsNone(action.get("clickDuration"))
 
 
 class Row2RoundTripTest(unittest.TestCase):
