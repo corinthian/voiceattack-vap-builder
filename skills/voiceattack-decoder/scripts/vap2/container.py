@@ -8,7 +8,7 @@ path in walker, not decompressed here.
 import zlib
 
 # Largest real reference profile is ~80 KB compressed / ~550 KB decompressed
-# (largest XML-form profile ~90 KB); these caps give ~100x headroom (SECURITY_REVIEW finding 2).
+# (largest XML-form profile ~90 KB); these caps give ~100x headroom.
 MAX_FILE_BYTES = 16 * 1024 * 1024
 MAX_DECOMPRESSED_BYTES = 64 * 1024 * 1024
 

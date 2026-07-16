@@ -1,4 +1,4 @@
-"""Tests for vap2.container bounded input/decompression (SECURITY_REVIEW finding 2).
+"""Tests for vap2.container bounded input/decompression.
 
 Run:  python3 -m unittest discover -s skills/voiceattack-decoder/tests -v
   or:  python3 skills/voiceattack-decoder/tests/test_container.py

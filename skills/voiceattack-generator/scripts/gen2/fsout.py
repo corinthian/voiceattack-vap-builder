@@ -1,4 +1,4 @@
-"""Atomic output writes for gen2 (SECURITY_REVIEW finding 5).
+"""Atomic output writes for gen2.
 
 Writing directly to the output path lets a pre-existing symlink at that path redirect
 the write to an arbitrary file. write_text_atomic() writes to a temp file in the same

@@ -1,4 +1,4 @@
-"""Atomic output write + encode_file self-clobber guard (SECURITY_REVIEW finding 5).
+"""Atomic output write + encode_file self-clobber guard.
 
 encode_file() has no prior callers or tests anywhere in the repo (confirmed by grep
 before writing these) — this module is its first executable contract. Modeled on the
