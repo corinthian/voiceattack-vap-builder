@@ -7,6 +7,11 @@ path in walker, not decompressed here.
 
 import zlib
 
+# Largest real reference profile is ~80 KB compressed / ~550 KB decompressed
+# (largest XML-form profile ~90 KB); these caps give ~100x headroom (SECURITY_REVIEW finding 2).
+MAX_FILE_BYTES = 16 * 1024 * 1024
+MAX_DECOMPRESSED_BYTES = 64 * 1024 * 1024
+
 
 class ContainerError(Exception):
     """Unrecognized or corrupt container."""
@@ -21,11 +26,24 @@ def sniff(data):
 
 
 def decompress(data):
-    """Raw deflate, no zlib header (wbits=-15). Spec sec 3.1."""
+    """Raw deflate, no zlib header (wbits=-15). Spec sec 3.1.
+
+    Uses decompressobj with a max_length budget so a decompression bomb can't blow
+    memory. decompressobj does not raise on a truncated stream the way one-shot
+    zlib.decompress does, so eof is checked explicitly to preserve corrupt-file detection.
+    """
+    d = zlib.decompressobj(-15)
     try:
-        return zlib.decompress(data, -15)
+        out = d.decompress(data, MAX_DECOMPRESSED_BYTES)
     except zlib.error as e:
         raise ContainerError(f"raw-deflate decompression failed: {e}") from e
+    if d.unconsumed_tail:
+        raise ContainerError("decompressed output exceeds max size")
+    if not d.eof:
+        raise ContainerError("raw-deflate decompression failed: truncated stream")
+    if d.unused_data:
+        raise ContainerError("raw-deflate decompression failed: trailing garbage after stream")
+    return out
 
 
 def load(path):
@@ -35,6 +53,8 @@ def load(path):
         data = f.read()
     if not data:
         raise ContainerError("empty file")
+    if len(data) > MAX_FILE_BYTES:
+        raise ContainerError("file exceeds max size")
     kind = sniff(data)
     if kind == "xml":
         return "xml", data
