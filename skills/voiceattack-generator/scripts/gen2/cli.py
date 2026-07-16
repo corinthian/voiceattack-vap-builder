@@ -22,6 +22,7 @@ from . import names
 from . import lower as lower_mod
 from . import schema_input
 from .emit_profile import EmitError, emit
+from .fsout import write_text_atomic
 from .lower import LoweringError
 from .schema_input import SchemaError
 
@@ -83,8 +84,7 @@ def main(argv=None):
         print("ERROR: %s" % e, file=sys.stderr)
         return 1
 
-    with open(output, "w", encoding="utf-8") as f:
-        f.write(xml)
+    write_text_atomic(output, xml)
 
     print("Generated: %s (%s door)" % (output, "schema" if schema_door else "simple"))
     print("Commands: %d" % len(model["commands"]))
