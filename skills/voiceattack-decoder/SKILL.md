@@ -27,6 +27,11 @@ python3 -m vap2 input.vap --stdout --xml  # gated secondary XML (prelim §8)
 Output schema is frozen in `docs/V2_JSON_Schema.md`. Both containers are handled: raw-deflate
 binary via the object walk, and uncompressed `<Profile>` XML input (v1 crashed on this).
 
+Decoded JSON/XML is a verbatim transcription of the profile — it can contain launch paths,
+command-line arguments, clipboard text, and typed text. Treat decoded output with the same
+care as the profile itself before sharing or committing it. `output files/` is gitignored
+for this reason.
+
 ## What It Does (V2)
 
 1. Sniffs the container (raw-deflate binary or `<Profile>` XML).
