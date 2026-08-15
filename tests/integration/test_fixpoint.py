@@ -335,5 +335,54 @@ class SetClipboardFixpointTest(unittest.TestCase):
                          [_normalize(a) for a in j2["commands"][0]["actions"]])
 
 
+class VariableDurationPressFixpointTest(unittest.TestCase):
+    """Variable-duration PressKey: hold the key for {DEC:var} seconds. XML carriers
+    Y=1 + ConditionSetName=<decimal variable> + Duration=0 — ground truth the
+    VA-authored Cities Skylines II XML export 2026-08-14 (10 instances, all four
+    camera commands; dictionary PressKey duration_variable note). The CS2 fixture
+    exercises the real thing where local assets exist; this synthetic class is the
+    portable guard. The plain press rides the f13/f24 dictionary keys (both ends of
+    the new F-key range: inferred and solid) through the same round trip."""
+
+    def test_variable_duration_press_fixpoint(self):
+        model = {"profile": {"id": None, "name": "VarHold"},
+                 "commands": [{"phrase": "camera hold", "category": "camera",
+                               "actions": [
+                     {"actionType": {"code": 38, "name": "SetDecimal"},
+                      "targetVariable": "pan", "value": 0.5},
+                     {"actionType": {"code": 0, "name": "PressKey"},
+                      "durationVariable": "pan",
+                      "keyCodes": [{"vk": 87, "name": "w"}]},
+                     {"actionType": {"code": 0, "name": "PressKey"},
+                      "duration": 0.1,
+                      "keyCodes": [{"vk": 124, "name": "f13"},
+                                   {"vk": 135, "name": "f24"}]},
+                 ]}]}
+        xml, warnings = emit(model, GEN2_DICT)
+        self.assertEqual(warnings, [])
+        # Emit side: the exact VA carriers, and no fixed duration on the hold.
+        self.assertIn("<Y>1</Y>", xml)
+        self.assertIn('<ConditionSetName xml:space="preserve">pan</ConditionSetName>',
+                      xml)
+
+        j1 = vap2.decode_bytes(xml.encode("utf-8"))
+        acts = j1["commands"][0]["actions"]
+        hold, plain = acts[1], acts[2]
+        self.assertEqual(hold["actionType"]["name"], "PressKey")
+        self.assertEqual(hold["durationVariable"], "pan")
+        self.assertEqual(hold["duration"], 0.0)
+        self.assertEqual([k["name"] for k in hold["keyCodes"]], ["w"])
+        # Y=0 press: the field must NOT appear (presence is the semantic marker).
+        self.assertNotIn("durationVariable", plain)
+        self.assertEqual([k["name"] for k in plain["keyCodes"]], ["f13", "f24"])
+
+        # Exact fixed point: re-emit is warning-free and records are identical.
+        xml2, warnings2 = emit(schema_input.parse(j1), GEN2_DICT)
+        self.assertEqual(warnings2, [])
+        j2 = vap2.decode_bytes(xml2.encode("utf-8"))
+        self.assertEqual([_normalize(a) for a in j1["commands"][0]["actions"]],
+                         [_normalize(a) for a in j2["commands"][0]["actions"]])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

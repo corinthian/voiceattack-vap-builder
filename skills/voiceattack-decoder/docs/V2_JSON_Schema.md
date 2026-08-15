@@ -1,6 +1,8 @@
 # VAP Decoder V2 — JSON Output Schema (FROZEN)
 
-Version 1.1 · frozen 2026-07-11 at W5 exit (plan §5 freeze gate); amended same day in review, before any consumer existed. This document, not the code, is the contract the generator/encoder refactor is authored against (plan §9). JSON is the normative, lossless decode output; `schema_version` is `2`. Changing or removing a field here is a MAJOR bump requiring a migration note; adding an optional field is MINOR.
+Version 1.2 · frozen 2026-07-11 at W5 exit (plan §5 freeze gate); amended same day in review, before any consumer existed. This document, not the code, is the contract the generator/encoder refactor is authored against (plan §9). JSON is the normative, lossless decode output; `schema_version` is `2`. Changing or removing a field here is a MAJOR bump requiring a migration note; adding an optional field is MINOR.
+
+**v1.1 → v1.2 migration note (PressKey `durationVariable`, additive — authorized 2026-08-14).** PressKey gains the optional `durationVariable` field: the variable-duration press (hold the key for `{DEC:var}` seconds; VA-authored Cities Skylines II export 2026-08-14, dictionary PressKey `duration_variable` note). XML carriers `Y=1` + `ConditionSetName=<var>` + `Duration=0`; the field is bound ONLY when `Y=1` — presence is the semantic marker, and `duration` still binds `0.0` beside it. Binary carriers `m[12]` (the Y flag, u32 1) + `m[15]` (variable name string; 0xFFFFFFFF absent on ordinary presses) confirmed 2026-08-15 via VA binary re-export probes — both decode paths bind the field identically. v1.1 readers that ignore unknown keys are unaffected; an encoder that drops the field re-creates the pre-v1.2 silent-loss defect this amendment closes.
 
 **v1.0 → v1.1 migration note (category null).** `category.value` is now `<str>|null`; `null` means the command has no category (VoiceAttack's empty-category state). v1.0's synthetic `"uncategorized"` placeholder is no longer emitted — an encoder writing it back would invent a category the profile never had. No consumer existed at v1.0, so this amendment predates all readers.
 
@@ -87,7 +89,7 @@ through opaquely by the encoder (round-trip contract §3):
 
 | Family (code) | Fields |
 |---|---|
-| PressKey (0) | `duration` (s), `keyCodes: [{vk,name}]` |
+| PressKey (0) | `duration` (s), `keyCodes: [{vk,name}]`, `durationVariable`? (v1.2: hold for `{DEC:var}` s; bound only on the flagged form — XML `Y=1`+`ConditionSetName`, binary `m[12]=1`+`m[15]`) |
 | KeyDown/Up/Toggle (8/9/67) | `keyCodes` (duration is 0 by definition) |
 | Pause (2) | `duration` |
 | Say (13) | `text`, `voiceGuid`, `voiceName`, `volume`, `rate` |

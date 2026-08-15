@@ -1,10 +1,10 @@
-GENERATED from vap_capability_dictionary.json v0.4.1 — do not hand-edit; regenerate with dictionary_tools.py render
+GENERATED from vap_capability_dictionary.json v0.5.0 — do not hand-edit; regenerate with dictionary_tools.py render
 
 # VAP Capability Dictionary
 
 - Name: vap_capability_dictionary
-- Version: 0.4.1
-- Date: 2026-07-12
+- Version: 0.5.0
+- Date: 2026-07-13
 - Spec: skills/voiceattack-decoder/docs/VAP_Format_Specification.md v0.3
 - Purpose: Single machine-readable statement of everything the VAP decoder understands. Contract for decoder V2 output and the encoder module's input. All key/mouse/action names in both tools derive from this file; nothing is hand-maintained twice.
 - Canonical rule: Tools EMIT canonical names only and ACCEPT canonical + all listed aliases. Adding an alias is non-breaking; changing a canonical name is breaking (bump major). Decoder-v1 legacy names are preserved as aliases so previously decoded JSON keeps regenerating.
@@ -22,13 +22,13 @@ GENERATED from vap_capability_dictionary.json v0.4.1 — do not hand-edit; regen
 |---|---|---|---|---|---|
 | 0 | PressKey | PressKey | solid | canonical |  |
 | 2 | Pause | Pause | solid | canonical |  |
-| 3 | Launch | Launch | solid | canonical | Binary code + layout closed by Probe B (path 'C:\probe\launch-test.exe', args '--a1 --a2', workdir 'C:\probe\wd'). Decoder v1 emits run_application - name reconciliation is V2/encoder scope. |
+| 3 | Launch | Launch | solid | canonical | Binary code + layout closed by Probe B (path 'C:\probe\launch-test.exe', args '--a1 --a2', workdir 'C:\probe\wd'). Decoder v1 emits run_application - name reconciliation is V2/encoder scope. XML carriers Context=path / Context2=args / Context3=workdir oracle-verified by the W7 Export (2026-07-14, three distinct values) - promoted inferred->solid; gen2 emission now warning-free. |
 | 8 | KeyDown | KeyDown | solid | canonical |  |
 | 9 | KeyUp | KeyUp | solid | canonical |  |
 | 12 | MouseAction | MouseAction | solid | canonical | Context enum sweep, click duration, scroll count, and cursor Move closed by Probe B. |
 | 13 | Say | Say | solid | canonical | Binary code + full layout closed by Probe B (self-labeling: text 'say-marker', volume 43, rate 7). |
-| 16 | ExecuteCommand | ExecuteCommand | solid | warn | Binary code CSV-confirmed; member layout unmapped; XML name from external reference |
-| 17 | KillCommand | — | solid | warn |  |
+| 16 | ExecuteCommand | ExecuteCommand | solid | warn | Binary code CSV-confirmed; member layout unmapped. XML carriers oracle-verified by the W5 Export (2026-07-13): Context = target command GUID (reference is by GUID, NOT by name), X = 1 for 'wait until it completes'. EMISSION DEFERRED to a future release: authoring 'execute command X' requires resolving X to the GUID gen2 mints for that command elsewhere in the same profile (lowering-layer cross-reference), out of scope for this release. |
+| 17 | KillCommand | KillCommand | solid | warn | XML name/carrier oracle-verified by the W5 Export (2026-07-13): Context = target command GUID (by-GUID reference, like ExecuteCommand). EMISSION DEFERRED to a future release with the same name->GUID cross-reference requirement as ExecuteCommand (16). |
 | 18 | SetSmallInt | ConditionSet | parked | opaque | MOOT in VoiceAttack 2: Small Int merged into Integer (Probe B, user-confirmed in-profile). Building 'Set Small Int' in VA2 serializes as ActionType 37 (SetInteger) mode 0, not this code. Code 18 retained legacy/decode-only for pre-VA2 profiles; its own layout cannot be re-sampled from a VA2 build and stays unmapped. XML name ConditionSet (legacy VA1 'condition' = small int): target ConditionSetName, value X int text node — real XML exports (mandiant/IDA_Pro_VoiceAttack_profile, Antaniserse/VAExtensions; 2026-07-12). |
 | 19 | BeginCondition | ConditionStart | solid | canonical | Compare gate: m[2] in {19,63,30}. Compound (multi-sub-condition) blocks are decode-only: emit first sub-compare + explicit compound marker. XML ActionType name verified against real VoiceAttack XML exports (mandiant/IDA_Pro_VoiceAttack_profile, Penecruz/VAICOM-Community; 2026-07-11). |
 | 20 | EndCondition | ConditionEnd | solid | canonical | XML ActionType name verified against real VoiceAttack XML exports (mandiant/IDA_Pro_VoiceAttack_profile, Penecruz/VAICOM-Community; 2026-07-11). |
@@ -36,24 +36,24 @@ GENERATED from vap_capability_dictionary.json v0.4.1 — do not hand-edit; regen
 | 22 | ExecuteExternalPlugin | — | solid | warn |  |
 | 23 | Write | WriteToLog | solid | warn | Write-to-log/screen; distinct from Say (13). Text field reconfirmed by Probe B ('write-marker'); color/shape UI parameters found in no nonzero slot with one default-value sample - parked, see VAP_Parked_Uncertainties.md item 6. XML: text Context (variable tokens legal), X = color code (0/1/3/6 observed, name mapping unverified) — real XML exports (Antaniserse/VAExtensions, Penecruz/VAICOM-Community; 2026-07-12). |
 | 24 | SetClipboard | SetClipboard | solid | canonical | Binary code + layout closed by Probe B (text 'clip-marker'). REFUTES the removed 'PasteDictation' entry (was binary_code 24, confidence plausible): 'Paste Dictation' does not exist as a VoiceAttack 2 action - confirmed in-profile (Probe B's dictation sweep recorded a SetClipboard action whose text field reads "No such action as 'Paste dictation'", not a distinct action type). |
-| 25 | DictationMode | — | solid | warn | Start Dictation Mode. Promoted solid by Probe B (self-labeling command-phrase build). |
-| 26 | StopDictation | — | solid | warn | Stop Dictation Mode. Promoted solid by Probe B. |
-| 27 | ClearDictationBuffer | — | solid | warn | Promoted solid by Probe B. |
+| 25 | DictationMode | StartDictation | solid | warn | Start Dictation Mode. Promoted solid by Probe B (self-labeling command-phrase build). XML name StartDictation oracle-verified by the W5 Export (hand-build -> VA XML export -> extract, 2026-07-13); parameterless, emitted with the shared skeleton. |
+| 26 | StopDictation | StopDictation | solid | warn | Stop Dictation Mode. Promoted solid by Probe B. XML name StopDictation oracle-verified by the W5 Export (2026-07-13); parameterless, emitted with the shared skeleton. |
+| 27 | ClearDictationBuffer | ClearDictation | solid | warn | Promoted solid by Probe B. XML name ClearDictation (note: differs from the canonical) oracle-verified by the W5 Export (2026-07-13); parameterless, emitted with the shared skeleton. |
 | 29 | Else | ConditionElse | solid | canonical | XML ActionType name verified against real VoiceAttack XML exports (mandiant/IDA_Pro_VoiceAttack_profile, Penecruz/VAICOM-Community; 2026-07-11). |
 | 30 | BeginLoopWhile | WhileStart | solid | canonical | XML ActionType name verified against real XML exports (SavageCore/EDDB_Scraper; 2026-07-12). |
 | 31 | EndLoop | WhileEnd | solid | canonical | XML ActionType name verified against real XML exports (SavageCore/EDDB_Scraper; 2026-07-12). |
 | 32 | Marker | — | solid | warn |  |
 | 33 | JumpToMarker | — | solid | warn |  |
-| 35 | PlaySound | — | solid | warn |  |
+| 35 | PlaySound | — | parked | warn | UNCONFIRMED and likely wrong (downgraded solid->parked 2026-07-13): a hand-built 'Play a Sound' action exported as <ActionType>SoundFile</ActionType> at binary code 14, NOT 35 (W5 Export), with carriers Context = sound ref (e.g. 'internal:Abinkle'), X = volume (100 observed), Context4 = device ('Default'), Context3 = zero GUID. Code 35's origin is unprovenanced. Full SoundFile (code 14) support - dictionary entry + binary decoder + emission - is deferred to a future release. |
 | 36 | SetBoolean | BooleanSet | solid | warn | m[14] is the same value-source-mode concept as SetInteger's m[14] but a DIFFERENT per-type dropdown ordering - do not conflate. XML: target Context, value InputMode (0=True, 1=False, matches binary m[14] enum exactly; both polarities sampled) — real XML exports (mandiant/IDA_Pro_VoiceAttack_profile; 2026-07-12). |
 | 37 | SetInteger | IntSet | solid | warn | Set Small Int (code 18) is legacy/decode-only in VA2 - see that entry. Decoder hazard: m[16]/m[19]/m[23] may hold stale values from a previously-selected mode; gate every read on m[14], never infer mode from which slots are populated (plausible, single-sample). XML name IntSet: target ConditionSetName, literal value X int text node; the stale-slot hazard recurs at the XML layer (Context/Context2 observed carrying leftover author strings on IntSet — never read them as operands) — real XML exports (Antaniserse/VAExtensions, SavageCore/EDDB_Scraper; 2026-07-12). |
 | 38 | SetDecimal | DecimalSet | solid | warn | XML name/carriers (target ConditionSetName, value DecimalContext1) inferred by IntSet analogy, then CONFIRMED by VA import probe 2026-07-12: generated Zoom Zoom profile imported, WriteToLog printed {DEC:bbq} as 2.25/0.75 per branch — carriers read correctly by VoiceAttack. |
 | 40 | QuickInput | FreeType | solid | warn | XML: text Context (variable tokens legal), Duration = per-keystroke delay seconds (0.05 observed), InputMode=1 on both samples (semantics unverified) — real XML exports (SavageCore/EDDB_Scraper, 2 samples; 2026-07-12). |
-| 50 | StartListening | — | solid | warn | Start VoiceAttack Listening. Closed by Probe B; no fields observed beyond the shared envelope - layout is empty, not unknown. |
-| 51 | StopListening | — | solid | warn | Stop VoiceAttack Listening. Closed by Probe B; no fields observed beyond the shared envelope - layout is empty, not unknown. |
-| 62 | PauseVariable | — | solid | warn | Pause a variable number of seconds; distinct from fixed Pause (2) |
+| 50 | StartListening | InternalProcess_StartListening | solid | warn | Start VoiceAttack Listening. Closed by Probe B; no fields observed beyond the shared envelope - layout is empty, not unknown. XML name InternalProcess_StartListening (the InternalProcess_ prefix is a VA-ism, not guessable) oracle-verified by the W5 Export (2026-07-13); parameterless, emitted with the shared skeleton. |
+| 51 | StopListening | InternalProcess_StopListening | solid | warn | Stop VoiceAttack Listening. Closed by Probe B; no fields observed beyond the shared envelope - layout is empty, not unknown. XML name InternalProcess_StopListening oracle-verified by the W5 Export (2026-07-13); parameterless, emitted with the shared skeleton. |
+| 62 | PauseVariable | PauseVariable | solid | warn | Pause a variable number of seconds; distinct from fixed Pause (2). XML name/carrier oracle-verified by the W5 Export (2026-07-13): Context = variable name, bare (e.g. 'bbq', not {DEC:bbq}). EMISSION DEFERRED: the binary decoder parks this action's operands (FIELDS_UNDECODED), so it has no round-trip coverage yet - defer until the binary layout is decoded. |
 | 63 | ElseIf | ConditionElseIf | solid | canonical | XML ActionType name verified against real VoiceAttack XML exports (mandiant/IDA_Pro_VoiceAttack_profile, Penecruz/VAICOM-Community; 2026-07-11). |
-| 64 | ExitCommand | — | solid | warn |  |
+| 64 | ExitCommand | ExitCommand | solid | warn | XML name oracle-verified by the W5 Export (2026-07-13): parameterless. EMISSION DEFERRED: the binary decoder parks its operands (FIELDS_UNDECODED), so a decoded ExitCommand has no round-trip coverage; emission is trivially correct but ships only once round-trip-testable. |
 | 67 | KeyToggle | KeyToggle | solid | canonical |  |
 
 ## Keys
@@ -112,7 +112,19 @@ GENERATED from vap_capability_dictionary.json v0.4.1 — do not hand-edit; regen
 | f10 | 121 | 0x79 | — | solid |
 | f11 | 122 | 0x7A | — | solid |
 | f12 | 123 | 0x7B | — | solid |
+| f13 | 124 | 0x7C | — | inferred |
+| f14 | 125 | 0x7D | — | inferred |
+| f15 | 126 | 0x7E | — | inferred |
+| f16 | 127 | 0x7F | — | inferred |
+| f17 | 128 | 0x80 | — | inferred |
+| f18 | 129 | 0x81 | — | inferred |
+| f19 | 130 | 0x82 | — | inferred |
 | f2 | 113 | 0x71 | — | solid |
+| f20 | 131 | 0x83 | — | solid |
+| f21 | 132 | 0x84 | — | solid |
+| f22 | 133 | 0x85 | — | solid |
+| f23 | 134 | 0x86 | — | solid |
+| f24 | 135 | 0x87 | — | solid |
 | f3 | 114 | 0x72 | — | solid |
 | f4 | 115 | 0x73 | — | solid |
 | f5 | 116 | 0x74 | — | solid |

@@ -1,7 +1,7 @@
-"""Strict v1.1 schema-JSON reader (plan W2) — the encoder's front door.
+"""Strict v1.2 schema-JSON reader (plan W2) — the encoder's front door.
 
 Validates the FROZEN normative decode shape (skills/voiceattack-decoder/docs/
-V2_JSON_Schema.md v1.1): top level `{schema_version: 2, profile, commands, ...}`.
+V2_JSON_Schema.md v1.2): top level `{schema_version: 2, profile, commands, ...}`.
 Provenance/offset annotations (`offset`, `head`, `guid`, `guidOffset`, `regionOffset`,
 `source`, `census`, `confidence`, ...) are tolerated and ignored, never required — the
 schema's one rule is that no value depends on a byte offset to be interpretable.
@@ -21,7 +21,7 @@ import json
 
 
 class SchemaError(Exception):
-    """The input is not a v1.1 schema-JSON document. Hard fail: exit 1, no output."""
+    """The input is not a v1.2 schema-JSON document. Hard fail: exit 1, no output."""
 
 
 def load(path):
@@ -52,7 +52,7 @@ def parse(doc):
         raise SchemaError("top level must be a JSON object, got %s" % _kind(doc))
     if "schema_version" not in doc:
         raise SchemaError(
-            "missing schema_version — not a v1.1 schema-JSON document "
+            "missing schema_version — not a v1.2 schema-JSON document "
             "(the v1 simple authoring format enters via the lowering layer, not here)")
     if doc["schema_version"] != 2:
         raise SchemaError("schema_version %r not supported (expected 2)" % (doc["schema_version"],))

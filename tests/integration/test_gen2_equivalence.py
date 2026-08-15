@@ -44,7 +44,7 @@ PROFILES = os.path.join(ROOT, "reference profiles")
 # Committed simple-format fixtures (plan W0b) the old generator emits cleanly.
 W1_FIXTURES = [
     os.path.join(ROOT, "output files", "zoom_zoom.json"),
-    os.path.join(ROOT, "cities_skylines_2_conditional.json"),
+    os.path.join(ROOT, "tests", "fixtures", "cities_skylines_2_conditional.json"),
 ]
 
 GUID_RE = re.compile(r"<Id>[0-9a-f\-]{36}</Id>")

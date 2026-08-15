@@ -363,6 +363,18 @@ def _payload_defect(canonical, rec):
             return "%s contains control character %s, illegal in XML 1.0" % (field, cp)
         return None
 
+    if canonical == "PressKey" and "durationVariable" in rec:
+        variable = rec.get("durationVariable")
+        if not isinstance(variable, str) or not variable:
+            return "requires a non-empty string 'durationVariable' (got %r)" % (variable,)
+        duration = rec.get("duration")
+        if duration not in (None, 0, 0.0):
+            # A record carrying BOTH a fixed duration and a duration variable is
+            # degenerate — the XML form has one Duration slot and Y=1 makes VA read
+            # the variable; emitting the pair would silently discard the number.
+            return ("carries both 'durationVariable' %r and a nonzero 'duration' %r - "
+                    "the two are mutually exclusive" % (variable, duration))
+        return clean(variable, "'durationVariable'")
     if canonical == "SetDecimal":
         variable = rec.get("targetVariable")
         if not isinstance(variable, str) or not variable:
@@ -573,11 +585,21 @@ def _action_xml(plan, dictionary, warn):
     dc1 = "0"
     input_mode = "0"
     key_codes_xml = "<KeyCodes/>"
+    condition_set_name = None
 
     if canonical in _KEY_FAMILY:
         key_codes_xml = _key_codes_xml(rec.get("keyCodes", []), warn)
         if canonical == "PressKey":
-            duration_str = _format_duration(rec.get("duration", 0), warn)
+            if rec.get("durationVariable") is not None:
+                # Variable-duration press: hold for {DEC:var} seconds. Carriers Y=1 +
+                # ConditionSetName + Duration=0, verbatim from the VA-authored CS2
+                # export 2026-08-14 (dictionary PressKey duration_variable note).
+                # Payload validity (non-empty variable, no competing fixed duration)
+                # was established in routing (_payload_defect) / lower.py.
+                y = "1"
+                condition_set_name = rec["durationVariable"]
+            else:
+                duration_str = _format_duration(rec.get("duration", 0), warn)
         # KeyDown/KeyUp/KeyToggle: Duration is 0 by definition (dictionary fields note).
     elif canonical == "Pause":
         duration_str = _format_duration(rec.get("duration", 0), warn)
@@ -631,7 +653,7 @@ def _action_xml(plan, dictionary, warn):
             duration_str = _format_duration(rec["clickDuration"], warn)
 
     return _ordinary_xml(xml_type, ordinal, indent, duration_str, key_codes_xml,
-                         context, x, y, z, dc1, input_mode)
+                         context, x, y, z, dc1, input_mode, condition_set_name)
 
 
 def _key_codes_xml(key_codes, warn):
@@ -705,7 +727,15 @@ def _int_str(value, default, label, warn):
 # --- templates (verbatim from vap_generator.py 2.0.0 — ground truth, do not edit) ----
 
 def _ordinary_xml(action_type, ordinal, indent_level, duration_str, key_codes_xml,
-                  context, x, y, z, decimal_context1, input_mode="0"):
+                  context, x, y, z, decimal_context1, input_mode="0",
+                  condition_set_name=None):
+    # condition_set_name (variable-duration PressKey only): inserted between InputMode
+    # and ConditionPairing with xml:space="preserve" — the exact slot and form of the
+    # VA-authored CS2 export 2026-08-14, matching the _decimal_set_xml carrier.
+    csn_xml = ""
+    if condition_set_name is not None:
+        csn_xml = (f"\n          <ConditionSetName xml:space=\"preserve\">"
+                   f"{escape(condition_set_name)}</ConditionSetName>")
     action_id = new_guid()
     return f"""        <CommandAction>
           <PairingSet>false</PairingSet>
@@ -725,7 +755,7 @@ def _ordinary_xml(action_type, ordinal, indent_level, duration_str, key_codes_xm
           <X>{x}</X>
           <Y>{y}</Y>
           <Z>{z}</Z>
-          <InputMode>{input_mode}</InputMode>
+          <InputMode>{input_mode}</InputMode>{csn_xml}
           <ConditionPairing>0</ConditionPairing>
           <ConditionGroup>0</ConditionGroup>
           <ConditionStartOperator>0</ConditionStartOperator>

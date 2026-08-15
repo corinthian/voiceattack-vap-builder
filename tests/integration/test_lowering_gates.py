@@ -37,8 +37,9 @@ import vap2  # noqa: E402
 
 GENERATOR = os.path.join(ROOT, "skills", "voiceattack-generator", "scripts",
                          "vap_generator.py")
-NAIVE = os.path.join(ROOT, "cities_skylines_2.json")
-CONDITIONAL = os.path.join(ROOT, "cities_skylines_2_conditional.json")
+FIXTURES = os.path.join(ROOT, "tests", "fixtures")
+NAIVE = os.path.join(FIXTURES, "cities_skylines_2.json")
+CONDITIONAL = os.path.join(FIXTURES, "cities_skylines_2_conditional.json")
 
 GUID_RE = re.compile(r"<(Id|BaseId)>[0-9a-f\-]{36}</(Id|BaseId)>")
 _DURATION_FIELDS = ("duration", "clickDuration", "scroll_clicks")

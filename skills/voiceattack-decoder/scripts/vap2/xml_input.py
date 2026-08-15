@@ -83,12 +83,18 @@ def _parse_action(act_el, index, dictionary):
     }
 
     # PressKey (0): duration ALWAYS present, absent/zero binds 0.0 (binary _keys:
-    # `_opt_double or 0.0`); keyCodes ALWAYS present, even empty. KeyDown/Up/Toggle
+    # `_opt_double or 0.0`); keyCodes ALWAYS present, even empty. Y=1 marks the
+    # variable-duration form (hold for {DEC:var} seconds, variable in
+    # ConditionSetName — dictionary PressKey duration_variable carrier, VA-authored
+    # CS2 export 2026-08-14); durationVariable binds ONLY then. The binary path
+    # binds the same field from m[12]/m[15] (actions.py _keys). KeyDown/Up/Toggle
     # (8/9/67): keyCodes only — Duration reads 0.0 by definition and the binary record
     # carries NO duration key (actions.py _keys_no_duration; spec sec 9.2).
     if code == 0:
         base["duration"] = _local_float(act_el, "Duration") or 0.0
         base["keyCodes"] = _parse_keycodes(act_el, dictionary)
+        if _local_int(act_el, "Y") == 1:
+            base["durationVariable"] = _local_text_or_empty(act_el, "ConditionSetName")
         return base
     if code in (8, 9, 67):
         base["keyCodes"] = _parse_keycodes(act_el, dictionary)
