@@ -9,7 +9,7 @@ VoiceAttack profile tools - accessibility utilities for creating and analyzing V
 1. **Generator**: JSON → VAP (create profiles from simple definitions)
 2. **Decoder**: Binary VAP → XML + JSON (reverse-engineer existing profiles)
 
-**Status:** 2.0.0 shipped on `main` (`039b7aa`). The **2.1 encoder line** is complete on `feature/generator-v2` (W0–W7 done) and staged for release. `gen2` (`skills/voiceattack-generator/scripts/gen2/`, stdlib-only, dictionary-driven) is now the **active generator** — its CLI (`python3 -m gen2`) auto-detects the simple authoring format vs schema-v1.1 JSON and is one emission pipeline; the overloaded-trigger idiom auto-lowers to a `{LASTSPOKENCMD}` dispatch chain (collision-checked by exhaustive utterance simulation). `vap_generator.py` is deprecated (soak-only, fewer types; still backs the audit's key/mouse tables). Emit coverage: keys/mouse/Pause/Say, SetDecimal/Write/conditionals, row-2 (TextSet/BooleanSet/IntSet/QuickInput), SetClipboard, Launch (carriers VA-confirmed), and the five parameterless dark types (dictation/listening) — all VA-import-verified, zero inference. Deferred to a future release: ExecuteCommand/KillCommand (by-GUID), PauseVariable/ExitCommand (decoder-parked), SoundFile (code 14, corrects bogus PlaySound=35), While-loops (D4), animated mouse-move (DecimalContext2 timing + steps/ease flags — W7 ground truth, not the old wrong `Duration` inference). The `decode(encode(decode(x)))==decode(x)` fixpoint is a live repo-level gate (`tests/integration/`). Decoder V2 (`scripts/vap2/`, stdlib-only object-walk) decodes binary and XML-form profiles into normative JSON (schema v1.1, frozen). The dictionary audit is gen2-aware + parked-aware (W6). Harness: 25 integration + 60 decoder tests green; dictionary 0.5.0 validate OK + audit exit 0; manifest 2.1.1. 2.1.0 shipped and tagged; the 2.1.1 line (`fix/security-review`, PR #27) adds bounded container input/decompression, atomic output writes, and the decoder verbatim-transcription doc note.
+**Status:** 2.0.0 shipped on `main` (`039b7aa`). The **2.1 encoder line** is complete on `feature/generator-v2` (W0–W7 done) and staged for release. `gen2` (`skills/voiceattack-generator/scripts/gen2/`, stdlib-only, dictionary-driven) is now the **active generator** — its CLI (`python3 -m gen2`) auto-detects the simple authoring format vs schema-v1.2 JSON and is one emission pipeline; the overloaded-trigger idiom auto-lowers to a `{LASTSPOKENCMD}` dispatch chain (collision-checked by exhaustive utterance simulation). `vap_generator.py` is deprecated (soak-only, fewer types; still backs the audit's key/mouse tables). Emit coverage: keys/mouse/Pause/Say, SetDecimal/Write/conditionals, row-2 (TextSet/BooleanSet/IntSet/QuickInput), SetClipboard, Launch (carriers VA-confirmed), and the five parameterless dark types (dictation/listening) — all VA-import-verified, zero inference. Deferred to a future release: ExecuteCommand/KillCommand (by-GUID), PauseVariable/ExitCommand (decoder-parked), SoundFile (code 14, corrects bogus PlaySound=35), While-loops (D4), animated mouse-move (DecimalContext2 timing + steps/ease flags — W7 ground truth, not the old wrong `Duration` inference). The `decode(encode(decode(x)))==decode(x)` fixpoint is a live repo-level gate (`tests/integration/`). Decoder V2 (`scripts/vap2/`, stdlib-only object-walk) decodes binary and XML-form profiles into normative JSON (schema v1.2, frozen). The dictionary audit is gen2-aware + parked-aware (W6). Harness: 26 integration + 63 decoder tests green; dictionary 0.5.0 validate OK + audit exit 0; manifest 2.1.1. 2026-08-14 (silent update, no version bump by ruling): F-keys f13–f24 in the dictionary (f20–f24 solid via the CS2 VA export, f13–f19 inferred) and the variable-duration PressKey (`durationVariable` / authoring `duration_variable`: hold for {DEC:var} seconds; XML carriers Y=1 + ConditionSetName, schema v1.2) wired through decoder, gen2, and both fixpoint guards; 2026-08-15: both VA probes passed (varhold_test import round-trips the variable-duration emit + f13; binary re-exports confirm the carrier — m[12] Y flag, m[15] variable name) and the binary decode path now binds `durationVariable` too. 2.1.0 shipped and tagged; the 2.1.1 line (`fix/security-review`, PR #27) adds bounded container input/decompression, atomic output writes, and the decoder verbatim-transcription doc note.
 
 ## Commands
 
@@ -98,7 +98,7 @@ python3 -c "import zlib; d=zlib.decompress(open('file.vap','rb').read(),-15); pr
 ## Windows Virtual Key Codes
 
 ```
-A-Z: 65-90    0-9: 48-57    F1-F12: 112-123
+A-Z: 65-90    0-9: 48-57    F1-F12: 112-123   F13-F24: 124-135
 Enter: 13     Escape: 27    Space: 32     Tab: 9
 Left: 37      Up: 38        Right: 39     Down: 40
 Shift: 16     Ctrl: 17      Alt: 18       Win: 91
@@ -133,6 +133,7 @@ Separator: 108  Subtract: 109  Decimal: 110  Divide: 111
 
 **Rules:**
 - Never write generated profiles to `reference profiles/` - that's for source VAPs only
+- Before replacing any file in `reference profiles/`, copy the old one to `reference profiles/Archive/<name> <YYYY-MM-DD>.vap` (date = the old file's mtime). The directory is gitignored - the archive is the only history (adopted 2026-08-14 after the July-12 CS2 export was overwritten and had to be recovered from Time Machine)
 - All screenshots go in `Screenshots/`
 - All test/generated output goes in `output files/`
 
@@ -161,7 +162,7 @@ Use `{"_section": "..."}` entries to organize JSON - they're ignored by generato
 
 | Type | Parameters |
 |------|------------|
-| PressKey | keys, duration (default 0.1) |
+| PressKey | keys, duration (default 0.1) OR duration_variable (hold for {DEC:var} seconds; mutually exclusive with duration) |
 | KeyDown | keys |
 | KeyUp | keys |
 | KeyToggle | keys (press once = down, again = up) |
@@ -195,7 +196,7 @@ Interleave condition actions with ordinary actions to branch inside a command. `
 
 ### Key Names
 
-Letters: a-z, Numbers: 0-9, F-keys: f1-f12
+Letters: a-z, Numbers: 0-9, F-keys: f1-f24 (f13-f24 have no physical key on standard keyboards - collision-free voice-only game bindings)
 Special: enter, escape, space, tab, backspace, delete
 Arrows: left, up, right, down
 Modifiers (generic): shift, ctrl, alt, win

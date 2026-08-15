@@ -158,7 +158,24 @@ def _lower_action(action, dictionary, trigger, warn):
 
     if a_type in _KEY_TYPES:
         rec["keyCodes"] = _lower_keys(action.get("keys", []), dictionary, warn)
-        if a_type == "PressKey":
+        if "duration_variable" in action:
+            # Variable-duration press: hold for {DEC:var} seconds (dictionary PressKey
+            # duration_variable carrier). Authoring-door defects hard-fail, same rule
+            # as SetDecimal — a silently dropped or half-emitted press corrupts the
+            # command's behavior, not just one action.
+            if a_type != "PressKey":
+                _fail(trigger, "'duration_variable' is only valid on 'PressKey' "
+                               "(got it on '%s')" % a_type)
+            variable = action["duration_variable"]
+            if not isinstance(variable, str) or not variable:
+                _fail(trigger, "'PressKey' requires a non-empty string "
+                               "'duration_variable' (got %r)" % (variable,))
+            if "duration" in action:
+                _fail(trigger, "'PressKey' cannot carry both 'duration' and "
+                               "'duration_variable' - they are mutually exclusive")
+            _check_authored_text(variable, trigger, a_type, "'duration_variable'")
+            rec["durationVariable"] = variable
+        elif a_type == "PressKey":
             rec["duration"] = action.get("duration", 0.1)
         return rec
     if a_type == "Pause":

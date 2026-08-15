@@ -316,6 +316,47 @@ class HardFailValidationTest(unittest.TestCase):
         self.assert_fails([{"type": "Write"}], "requires a string 'text'")
 
 
+class VariableDurationPressTest(unittest.TestCase):
+    """`duration_variable` on PressKey: hold for {DEC:var} seconds (dictionary PressKey
+    duration_variable carrier — VA-authored CS2 export 2026-08-14). Authoring defects
+    hard-fail, same class as SetDecimal."""
+
+    def assert_fails(self, actions, pattern):
+        with self.assertRaisesRegex(LoweringError, pattern):
+            lower({"commands": [{"trigger": "t", "actions": actions}]})
+
+    def test_duration_variable_lowering(self):
+        cmd, _, warnings = one_command(
+            {"trigger": "pan", "actions": [
+                {"type": "PressKey", "keys": ["w"], "duration_variable": "pan"}]})
+        self.assertEqual(warnings, [])
+        rec = cmd["actions"][0]
+        self.assertEqual(rec["actionType"]["name"], "PressKey")
+        self.assertEqual(rec["durationVariable"], "pan")
+        # No fixed duration alongside the variable — not even the 0.1 default.
+        self.assertNotIn("duration", rec)
+
+    def test_empty_variable_hard_fails(self):
+        self.assert_fails([{"type": "PressKey", "keys": ["w"],
+                            "duration_variable": ""}],
+                          "non-empty string 'duration_variable'")
+
+    def test_non_string_variable_hard_fails(self):
+        self.assert_fails([{"type": "PressKey", "keys": ["w"],
+                            "duration_variable": 0.5}],
+                          "non-empty string 'duration_variable'")
+
+    def test_both_duration_and_variable_hard_fail(self):
+        self.assert_fails([{"type": "PressKey", "keys": ["w"], "duration": 0.5,
+                            "duration_variable": "pan"}],
+                          "mutually exclusive")
+
+    def test_duration_variable_on_keydown_hard_fails(self):
+        self.assert_fails([{"type": "KeyDown", "keys": ["w"],
+                            "duration_variable": "pan"}],
+                          "only valid on 'PressKey'")
+
+
 class IdiomDetectionTest(unittest.TestCase):
     """The conservative predicate: fires ONLY on the parallel-overload shape."""
 

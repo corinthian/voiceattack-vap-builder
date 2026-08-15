@@ -1264,6 +1264,131 @@ class XmlRow2SetFamilyTest(unittest.TestCase):
         self.assertNotIn("perKeyDelay", a)
 
 
+# Variable-duration PressKey: hold for {DEC:var} seconds. Carriers Y=1 +
+# ConditionSetName + Duration=0, lifted verbatim from the VA-authored Cities Skylines II
+# XML export 2026-08-14 (dictionary PressKey duration_variable note). The second press is
+# the plain Y=0 form and rides the new F-key range (f13 inferred / f24 solid).
+XML_VARIABLE_DURATION_FIXTURE = """<?xml version="1.0" encoding="utf-8"?>
+<Profile xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Id>a7b3c1d2-0000-4000-8000-000000000001</Id>
+  <Name>XML Variable Duration Fixture</Name>
+  <Commands>
+    <Command>
+      <Id>a7b3c1d2-0000-4000-8000-000000000002</Id>
+      <CommandString>camera hold</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Ordinal>0</Ordinal>
+          <ActionType>PressKey</ActionType>
+          <Duration>0</Duration>
+          <Delay>0</Delay>
+          <KeyCodes>
+            <unsignedShort>87</unsignedShort>
+          </KeyCodes>
+          <Context />
+          <X>0</X>
+          <Y>1</Y>
+          <Z>0</Z>
+          <InputMode>0</InputMode>
+          <ConditionSetName xml:space="preserve">pan</ConditionSetName>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <DecimalContext1>0</DecimalContext1>
+        </CommandAction>
+        <CommandAction>
+          <Ordinal>1</Ordinal>
+          <ActionType>PressKey</ActionType>
+          <Duration>0.1</Duration>
+          <Delay>0</Delay>
+          <KeyCodes>
+            <unsignedShort>124</unsignedShort>
+            <unsignedShort>135</unsignedShort>
+          </KeyCodes>
+          <Context />
+          <X>0</X>
+          <Y>0</Y>
+          <Z>0</Z>
+          <InputMode>0</InputMode>
+          <ConditionPairing>0</ConditionPairing>
+          <ConditionGroup>0</ConditionGroup>
+          <DecimalContext1>0</DecimalContext1>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+  </Commands>
+</Profile>
+"""
+
+
+class XmlVariableDurationPressTest(unittest.TestCase):
+    """PressKey Y=1 binds durationVariable from ConditionSetName; Y=0 must NOT carry
+    the key (presence is the semantic marker). The binary path binds the same key from
+    the m[12]/m[15] carriers (BinaryVariableDurationPressTest)."""
+
+    def setUp(self):
+        self.prof = vap2.decode_bytes(XML_VARIABLE_DURATION_FIXTURE.encode("utf-8"),
+                                      DICT)
+        self.actions = self.prof["commands"][0]["actions"]
+
+    def test_y1_binds_duration_variable(self):
+        a = self.actions[0]
+        self.assertEqual(a["actionType"], {"code": 0, "name": "PressKey"})
+        self.assertEqual(a["durationVariable"], "pan")
+        self.assertEqual(a["duration"], 0.0)
+        self.assertEqual([k["vk"] for k in a["keyCodes"]], [87])
+
+    def test_y0_omits_duration_variable(self):
+        a = self.actions[1]
+        self.assertNotIn("durationVariable", a)
+        self.assertEqual(a["duration"], 0.1)
+
+    def test_extended_f_key_names(self):
+        # f13-f24 (VK 124-135) resolve canonically; endpoints of the new range.
+        self.assertEqual([k["name"] for k in self.actions[1]["keyCodes"]],
+                         ["f13", "f24"])
+        self.assertEqual(DICT.key_name(124), "f13")
+        self.assertEqual(DICT.key_name(131), "f20")
+        self.assertEqual(DICT.key_name(135), "f24")
+
+
+class BinaryVariableDurationPressTest(unittest.TestCase):
+    """Binary carrier of the variable-duration press: the m[12] Y flag gates the m[15]
+    variable name (VA binary re-exports 2026-08-15). Parity with the XML path — the
+    field binds ONLY on flagged presses; ordinary presses must not carry the key."""
+
+    VARHOLD = "VarHold Authoring Test-Profile bin.vap"
+    CS2_BIN = "Cities Skylines II-Profile bin.vap"
+
+    def test_varhold_flagged_presses_bind_duration_variable(self):
+        require(self.VARHOLD)
+        by_phrase = {c["phrase"]: c for c in decode(self.VARHOLD)["commands"]}
+        presses = [a for a in by_phrase["pan [up; down]"]["actions"]
+                   if a["actionType"]["code"] == 0]
+        self.assertEqual([a["durationVariable"] for a in presses], ["pan", "pan"])
+        self.assertEqual([a["duration"] for a in presses], [0.0, 0.0])
+        self.assertEqual([k["name"] for a in presses for k in a["keyCodes"]],
+                         ["w", "s"])
+
+    def test_varhold_ordinary_press_omits_field(self):
+        require(self.VARHOLD)
+        by_phrase = {c["phrase"]: c for c in decode(self.VARHOLD)["commands"]}
+        (a,) = by_phrase["voice toolbar"]["actions"]
+        self.assertNotIn("durationVariable", a)
+        self.assertEqual(a["duration"], 0.1)
+        self.assertEqual([k["name"] for k in a["keyCodes"]], ["f13"])
+
+    def test_cs2_binary_variable_press_census(self):
+        # 10 flagged presses, 4 distinct variables (multi-char names included) —
+        # the full confirmation set from the CS2 binary re-export.
+        require(self.CS2_BIN)
+        actions = [a for c in decode(self.CS2_BIN)["commands"] for a in c["actions"]
+                   if "durationVariable" in a]
+        self.assertEqual(len(actions), 10)
+        self.assertEqual(sorted({a["durationVariable"] for a in actions}),
+                         ["ang", "k", "pan", "z"])
+        self.assertEqual({a["duration"] for a in actions}, {0.0})
+
+
 class Cs2BinaryXmlParityTest(unittest.TestCase):
     """W2.5 gate: binary decode of the CS2 reference profile vs XML decode of the profile
     the CURRENT generator emits from cities_skylines_2_conditional.json — field-identical

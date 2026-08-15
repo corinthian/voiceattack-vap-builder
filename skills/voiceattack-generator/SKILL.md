@@ -131,7 +131,7 @@ Once user confirms, run the generator with the final JSON.
 
 | Type | Parameters |
 |------|------------|
-| PressKey | keys, duration (default 0.1) |
+| PressKey | keys, duration (default 0.1) OR duration_variable (hold for {DEC:var} seconds; mutually exclusive with duration) |
 | KeyDown | keys |
 | KeyUp | keys |
 | KeyToggle | keys (press once = down, again = up) |
@@ -180,7 +180,7 @@ Format: `{button}_{action}` (e.g., `left_click`, `right_double_click`, `back_tog
 
 ## Key Names
 
-**Letters:** a-z | **Numbers:** 0-9 | **F-keys:** f1-f12
+**Letters:** a-z | **Numbers:** 0-9 | **F-keys:** f1-f24 (f13-f24 have no physical key on standard keyboards - collision-free voice-only game bindings)
 **Special:** enter, escape, space, tab, backspace, delete, insert, home, end, pageup, pagedown
 **Arrows:** left, up, right, down
 **Modifiers (generic):** shift, ctrl, alt, win

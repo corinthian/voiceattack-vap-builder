@@ -97,6 +97,12 @@ def make_action_decoder(dictionary):
 def _keys(d, base, dictionary):
     base["duration"] = _opt_double(d, 3) or 0.0
     base["keyCodes"] = _read_keycodes(d, dictionary)
+    # Variable-duration press (hold for {DEC:var} seconds): m[12] is the Y flag and
+    # gates the m[15] variable name; the field binds ONLY when the flag reads 1 —
+    # presence is the semantic marker, mirroring the XML path (Y=1 + ConditionSetName).
+    # Carriers confirmed 2026-08-15 against the VA binary re-exports.
+    if _opt_u32(d, 12) == 1:
+        base["durationVariable"] = _opt_string(d, 15) or ""
 
 
 def _keys_no_duration(d, base, dictionary):
