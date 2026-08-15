@@ -1400,7 +1400,8 @@ class Cs2BinaryXmlParityTest(unittest.TestCase):
     # binary form). The bare filename was overwritten 2026-08-14 by a later, larger
     # VA XML export that this fixture pair does not describe.
     BINARY = os.path.join("Archive", "Cities Skylines II-Profile 2026-07-12.vap")
-    SOURCE_JSON = os.path.join(ROOT, "cities_skylines_2_conditional.json")
+    SOURCE_JSON = os.path.join(ROOT, "tests", "fixtures",
+                               "cities_skylines_2_conditional.json")
     GENERATOR = os.path.join(ROOT, "skills", "voiceattack-generator", "scripts",
                              "vap_generator.py")
 
