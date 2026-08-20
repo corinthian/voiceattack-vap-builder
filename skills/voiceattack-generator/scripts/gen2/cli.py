@@ -54,11 +54,22 @@ def main(argv=None):
     except FileNotFoundError:
         print("ERROR: File not found: %s" % args.input, file=sys.stderr)
         return 1
-    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+    except UnicodeDecodeError as e:
+        print("ERROR: %s is not UTF-8 text: %s" % (args.input, e), file=sys.stderr)
+        return 1
+    except json.JSONDecodeError as e:
         print("ERROR: invalid JSON in %s: %s" % (args.input, e), file=sys.stderr)
         return 1
 
-    dictionary = names.load()
+    # A missing name authority means NOTHING is representable — the condition
+    # emit_profile reserves hard-fail for; warn-and-drop is not applicable. Exit 1, no
+    # output file. The message names the env var and every path tried, in order.
+    try:
+        dictionary = names.load()
+    except names.DictionaryNotFound as e:
+        print("ERROR: %s" % e, file=sys.stderr)
+        return 1
+
     # Warnings/infos stream as they occur so everything accumulated before a hard-fail is
     # already printed when the ERROR line lands (W5 fix wave, finding 4).
     warn = lambda w: print("WARNING: %s" % w, file=sys.stderr)

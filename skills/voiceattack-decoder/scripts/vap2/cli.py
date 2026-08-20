@@ -14,6 +14,7 @@ from . import decode_file
 from .container import ContainerError
 from .emit_json import to_json
 from .emit_xml import to_xml
+from .names import DictionaryNotFound
 from .xml_input import XmlInputError
 
 
@@ -30,6 +31,12 @@ def main(argv=None):
     try:
         profile = decode_file(args.input)
     except (ContainerError, XmlInputError) as e:
+        print("vap2: %s" % e, file=sys.stderr)
+        return 2
+    # BEFORE the FileNotFoundError arm, which blames args.input by name: decode_file
+    # resolves the dictionary before it ever opens the input, so an unresolvable
+    # dictionary used to be reported as a missing .vap — wrong-file blame.
+    except DictionaryNotFound as e:
         print("vap2: %s" % e, file=sys.stderr)
         return 2
     except FileNotFoundError:

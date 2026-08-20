@@ -1000,7 +1000,10 @@ def _run_gen2_pipeline(profile_data, no_idiom):
             profile_data, dictionary, no_idiom=no_idiom,
             info=print_info, warn=print_warn)
         xml, emit_warnings = gen2_emit(model, dictionary, warn=print_warn)
-    except (LoweringError, EmitError) as e:
+    # DictionaryNotFound joins the hard-fail arm at the same exit 1: this handler is the
+    # only guard around gen2_names.load(), and the FileNotFoundError handler in main()
+    # wraps the input-file open alone. Without it, an unresolvable dictionary tracebacks.
+    except (LoweringError, EmitError, gen2_names.DictionaryNotFound) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
 

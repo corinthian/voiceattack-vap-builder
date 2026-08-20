@@ -3,14 +3,19 @@
 dictionary_tools.py - tooling for vap_capability_dictionary.json
 
 Subcommands:
-    validate    structural validation of the dictionary
-    render      generate schema/VAP_Capability_Dictionary.md from the JSON
-    audit       zero-orphans check between the dictionary and the live decoder/generator sources
+    validate      structural validation of the dictionary
+    render        generate schema/VAP_Capability_Dictionary.md from the JSON
+    audit         zero-orphans check between the dictionary and the live decoder/generator sources
+    verify-copy   hash-compare a candidate dictionary copy against the loaded dictionary
+
+Note --dict sits on the MAIN parser and so precedes the subcommand:
+    dictionary_tools.py [--dict PATH] verify-copy CANDIDATE
 
 Python 3, stdlib only. See schema/VAP_Round_Trip_Contract.md for the contract this enforces.
 """
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import sys
@@ -27,6 +32,10 @@ GENERATOR_PATH = REPO_ROOT / "skills" / "voiceattack-generator" / "scripts" / "v
 # gen2 is the 2.1 emit authority; the action-type audit reads its WIRED/DEFERRED sets
 # (plan W6) instead of regexing the retiring vap_generator.py's action_xml().
 GEN2_SCRIPTS_DIR = REPO_ROOT / "skills" / "voiceattack-generator" / "scripts"
+# The LIVE v2 decoder. DECODER_PATH above is the retiring v1 tool, whose key/mouse
+# tables are hand-written literals; vap2's are derived from the dictionary at import,
+# and until now nothing in the default audit read them at all (finding 3).
+VAP2_NAMES_PATH = REPO_ROOT / "skills" / "voiceattack-decoder" / "scripts" / "vap2" / "names.py"
 
 CONFIDENCE_LEVELS = {"solid", "plausible", "inferred", "parked"}
 ROUND_TRIP_VALUES = {"canonical", "warn", "opaque"}
@@ -41,6 +50,18 @@ GROUP_ORDER = [
 def load_dict(path=DICT_PATH):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def sha256_file(path):
+    """Content hash of a dictionary file. Identity, not the version string: the
+    2026-08-14 f13-f24 addition shipped as a silent update by ruling, so two different
+    dictionaries can and do carry one version. Shared by the audit's identity check and
+    the verify-copy subcommand."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(65536), b""):
+            h.update(block)
+    return h.hexdigest()
 
 
 def group_sort_key(group):
@@ -501,7 +522,16 @@ def dict_key_name_maps(d):
     return all_names, canonical_names, name_vk
 
 
-def audit(d, decoder_mod, generator_mod, generator_src):
+def audit(d, decoder_mod, generator_mod, generator_src,
+          live_decoder_mod=None, dict_path=None):
+    """Zero-orphans check. The four POSITIONAL parameters are frozen — external callers
+    pass them positionally.
+
+    `live_decoder_mod` is the live v2 decoder's names module (vap2/names.py). Supplying
+    it enables the two finding-3 checks below; without it they report as not-checked.
+    `dict_path` is the path the audited dictionary `d` was loaded FROM — the identity
+    check compares against that, never against the DICT_PATH constant, or a run with
+    --dict would audit one dictionary and identity-check another."""
     report = {}
 
     dict_names, dict_canonical_names, dict_name_vk = dict_key_name_maps(d)
@@ -622,6 +652,48 @@ def audit(d, decoder_mod, generator_mod, generator_src):
         "pending_dict_xml_types_not_handled_by_generator": pending_action_types,
     }
 
+    # --- Live V2 decoder: table presence + dictionary identity (finding 3) ---
+    # Both layers of the hollow gate close here. Layer 1: vap2/names.py swallows a
+    # failed import-time load and leaves VK_CODES / CONTEXT_TO_GENERATOR EMPTY, so
+    # every set-difference above anchored on those tables is empty too and the gate
+    # passed vacuously. Empty now COUNTS. The guard is meaningless on the v1 hand
+    # tables — literals, never empty — which is why it is gated on live_decoder_mod.
+    # Layer 2: set-differencing vap2's dictionary-derived tables against the dictionary
+    # they derive from is a tautology. The meaningful check is IDENTITY — is the file
+    # vap2 actually loaded the same file this audit loaded? One hash catches a missing
+    # dictionary, a stale shadow copy, and env-var misdirection alike.
+    live = {"checked": live_decoder_mod is not None, "empty_tables": [], "identity": None}
+    live_failures = 0
+    if live_decoder_mod is not None:
+        for table in ("VK_CODES", "CONTEXT_TO_GENERATOR"):
+            if not getattr(live_decoder_mod, table, None):
+                live["empty_tables"].append(table)
+        live_failures += len(live["empty_tables"])
+
+        resolved = getattr(live_decoder_mod, "RESOLVED_DICT_PATH", None)
+        if resolved is None:
+            live["identity"] = "FAIL - the live decoder resolved no dictionary at all"
+            live_failures += 1
+        elif dict_path is None:
+            live["identity"] = "not checked - no audited dictionary path supplied"
+        else:
+            try:
+                audited_hash = sha256_file(dict_path)
+                live_hash = sha256_file(resolved)
+            except OSError as e:
+                live["identity"] = "FAIL - unreadable: %s" % e
+                live_failures += 1
+            else:
+                if audited_hash == live_hash:
+                    live["identity"] = "OK - %s (sha256 %s)" % (resolved, audited_hash[:16])
+                else:
+                    live["identity"] = (
+                        "FAIL - the live decoder loaded a DIFFERENT dictionary: "
+                        "%s (sha256 %s) vs audited %s (sha256 %s)"
+                        % (resolved, live_hash[:16], dict_path, audited_hash[:16]))
+                    live_failures += 1
+    report["live_decoder"] = live
+
     # --- Failure tally (true orphans/mismatches only; pending-adoption never fails) ---
     fail_count = (
         len(orphans_decoder_keys)
@@ -631,6 +703,7 @@ def audit(d, decoder_mod, generator_mod, generator_src):
         + len(mouse_decoder_only)
         + len(mouse_code_mismatches)
         + len(orphans_action_types)
+        + live_failures
     )
     report["fail_count"] = fail_count
     return report
@@ -674,6 +747,15 @@ def format_audit_report(report):
     lines.append(f"Pending - emit-ready in dict, neither emitted nor parked [RESOLVE before release]: {_fmt_list(a['pending_dict_xml_types_not_handled_by_generator'])}")
     lines.append("")
 
+    lv = report.get("live_decoder", {"checked": False, "empty_tables": [], "identity": None})
+    lines.append("=== Live V2 decoder (vap2/names.py): table presence + dictionary identity ===")
+    if not lv["checked"]:
+        lines.append("Not checked - no live decoder module supplied.")
+    else:
+        lines.append(f"Empty audit-facing tables [FAIL]: {_fmt_list(lv['empty_tables'])}")
+        lines.append(f"Dictionary identity: {lv['identity']}")
+    lines.append("")
+
     lines.append("=== Summary ===")
     lines.append(f"Total true orphans/mismatches: {report['fail_count']}")
     lines.append("Exit: 0" if report["fail_count"] == 0 else "Exit: 1")
@@ -685,10 +767,39 @@ def cmd_audit(args):
     decoder_mod = load_tool_module(Path(args.decoder))
     generator_mod = load_tool_module(Path(args.generator))
     generator_src = Path(args.generator).read_text(encoding="utf-8")
+    # ALWAYS audit the live v2 decoder, whatever --decoder points at. Its
+    # dictionary-derived tables were checked by nothing in the default run (finding 3).
+    live_decoder_mod = load_tool_module(VAP2_NAMES_PATH)
 
-    report = audit(d, decoder_mod, generator_mod, generator_src)
+    report = audit(d, decoder_mod, generator_mod, generator_src,
+                   live_decoder_mod=live_decoder_mod, dict_path=args.dict)
     print(format_audit_report(report))
     return 0 if report["fail_count"] == 0 else 1
+
+
+def cmd_verify_copy(args):
+    """Round-trip contract line 38 permits a derived/shipped dictionary copy only
+    'verified identical by the audit tool'. This subcommand is that verification, and
+    is required at packaging time if a copy ships at all."""
+    try:
+        reference_hash = sha256_file(args.dict)
+    except OSError as e:
+        print("verify-copy: cannot read the reference dictionary: %s" % e, file=sys.stderr)
+        return 1
+    try:
+        candidate_hash = sha256_file(args.candidate)
+    except OSError as e:
+        print("verify-copy: cannot read the candidate: %s" % e, file=sys.stderr)
+        return 1
+
+    print("reference: %s\n  sha256 %s" % (args.dict, reference_hash))
+    print("candidate: %s\n  sha256 %s" % (args.candidate, candidate_hash))
+    if reference_hash == candidate_hash:
+        print("verify-copy: OK - byte-identical")
+        return 0
+    print("verify-copy: FAIL - the candidate has DRIFTED from the reference dictionary. "
+          "The version string cannot detect this; the hash can.", file=sys.stderr)
+    return 1
 
 
 # ---------------------------------------------------------------------------
@@ -711,6 +822,15 @@ def build_parser():
     sp_audit.add_argument("--decoder", default=str(DECODER_PATH), help="path to vap_decoder.py")
     sp_audit.add_argument("--generator", default=str(GENERATOR_PATH), help="path to vap_generator.py")
     sp_audit.set_defaults(func=cmd_audit)
+
+    # The candidate is this subcommand's OWN positional: --dict lives on the main
+    # parser and precedes the subcommand, so the form is
+    #   dictionary_tools.py [--dict X] verify-copy <candidate>
+    sp_verify = sub.add_parser(
+        "verify-copy",
+        help="hash-compare a candidate dictionary copy against the loaded dictionary")
+    sp_verify.add_argument("candidate", help="path to the candidate dictionary copy")
+    sp_verify.set_defaults(func=cmd_verify_copy)
 
     return p
 

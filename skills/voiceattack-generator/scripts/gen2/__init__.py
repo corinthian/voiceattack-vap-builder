@@ -21,7 +21,12 @@ from .schema_input import SchemaError, load, parse
 
 def encode_file(input_path, output_path, dictionary=None):
     """Schema-JSON file -> XML .vap file. Returns the warning list (contract §3
-    refusals); raises SchemaError/EmitError on hard-fail defects, writing nothing."""
+    refusals); raises SchemaError/EmitError on hard-fail defects, writing nothing.
+
+    Also raises names.DictionaryNotFound when `dictionary` is omitted and the name
+    authority cannot be resolved (see names.load for the precedence). Nothing is
+    written in that case either — it is a hard fail like the other two, never a
+    warn-and-drop."""
     if os.path.exists(output_path):
         same = os.path.samefile(input_path, output_path)
     else:
