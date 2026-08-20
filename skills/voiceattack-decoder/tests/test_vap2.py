@@ -8,6 +8,7 @@ Run:  python3 -m unittest discover -s skills/voiceattack-decoder/tests -v
   or:  python3 skills/voiceattack-decoder/tests/test_vap2.py
 """
 
+import contextlib
 import csv
 import os
 import sys
@@ -1487,11 +1488,32 @@ class Cs2BinaryXmlParityTest(unittest.TestCase):
             self.assertIn(must, covered, "CS2 pair no longer exercises %s" % must)
 
 
-class AuditGateTest(unittest.TestCase):
-    """Round-trip contract: dictionary_tools audit must report zero orphans against V2."""
+@contextlib.contextmanager
+def _scrubbed_dict_env():
+    """Run with VAP_DICTIONARY_PATH unset. vap2/names.py reads it at EXEC time, so a
+    module loaded outside this scope is already bound to whatever the ambient
+    environment pointed at — load_tool_module must be called INSIDE."""
+    saved = os.environ.pop("VAP_DICTIONARY_PATH", None)
+    try:
+        yield
+    finally:
+        if saved is not None:
+            os.environ["VAP_DICTIONARY_PATH"] = saved
 
-    def test_names_audit_zero_orphans(self):
+
+class AuditGateTest(unittest.TestCase):
+    """Round-trip contract: dictionary_tools audit must report zero orphans against V2.
+
+    Both tests pass vap2's names module as `live_decoder_mod` as well as the positional
+    `decoder_mod`, so the finding-3 checks (empty audit-facing tables, dictionary
+    identity by hash) actually run here. Before that these gates were HOLLOW: they
+    asserted fail_count == 0 against set-differences anchored on tables that are empty
+    whenever the dictionary is unresolvable, so they could not fail. Both scrub
+    VAP_DICTIONARY_PATH — neither did, leaving them environment-sensitive."""
+
+    def _load_tools_and_modules(self):
         import importlib.util
+        import pathlib
         tools_path = os.path.join(ROOT, "schema", "dictionary_tools.py")
         gen_path = os.path.join(ROOT, "skills", "voiceattack-generator", "scripts", "vap_generator.py")
         if not (os.path.exists(tools_path) and os.path.exists(gen_path)):
@@ -1500,33 +1522,35 @@ class AuditGateTest(unittest.TestCase):
         tools = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(tools)
         d = tools.load_dict()
-        decoder_mod = tools.load_tool_module(__import__("pathlib").Path(
+        decoder_mod = tools.load_tool_module(pathlib.Path(
             os.path.join(SCRIPTS, "vap2", "names.py")))
-        gen_mod = tools.load_tool_module(__import__("pathlib").Path(gen_path))
+        gen_mod = tools.load_tool_module(pathlib.Path(gen_path))
         with open(gen_path) as f:
             gen_src = f.read()
-        report = tools.audit(d, decoder_mod, gen_mod, gen_src)
+        return tools, d, decoder_mod, gen_mod, gen_src
+
+    def test_names_audit_zero_orphans(self):
+        with _scrubbed_dict_env():
+            tools, d, decoder_mod, gen_mod, gen_src = self._load_tools_and_modules()
+            report = tools.audit(d, decoder_mod, gen_mod, gen_src,
+                                 live_decoder_mod=decoder_mod,
+                                 dict_path=str(tools.DICT_PATH))
         self.assertEqual(report["fail_count"], 0, report)
+        # The gate is no longer hollow: the tables it differences are non-empty and
+        # the dictionary vap2 loaded is the same file the audit loaded.
+        self.assertEqual(report["live_decoder"]["empty_tables"], [])
+        self.assertTrue(report["live_decoder"]["identity"].startswith("OK"),
+                        report["live_decoder"]["identity"])
 
     def test_action_type_parked_vs_pending(self):
         """W6: the audit is gen2-aware and parked-aware. Deliberately-deferred types
         report as PARKED; a dictionary type that is emit-ready but neither emitted nor
         parked reports as PENDING (a real adopt-or-park decision), never buried."""
-        import importlib.util
-        tools_path = os.path.join(ROOT, "schema", "dictionary_tools.py")
-        gen_path = os.path.join(ROOT, "skills", "voiceattack-generator", "scripts", "vap_generator.py")
-        if not (os.path.exists(tools_path) and os.path.exists(gen_path)):
-            self.skipTest("audit tooling or generator missing")
-        spec = importlib.util.spec_from_file_location("dictionary_tools", tools_path)
-        tools = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(tools)
-        d = tools.load_dict()
-        decoder_mod = tools.load_tool_module(__import__("pathlib").Path(
-            os.path.join(SCRIPTS, "vap2", "names.py")))
-        gen_mod = tools.load_tool_module(__import__("pathlib").Path(gen_path))
-        with open(gen_path) as f:
-            gen_src = f.read()
-        at = tools.audit(d, decoder_mod, gen_mod, gen_src)["action_types"]
+        with _scrubbed_dict_env():
+            tools, d, decoder_mod, gen_mod, gen_src = self._load_tools_and_modules()
+            at = tools.audit(d, decoder_mod, gen_mod, gen_src,
+                             live_decoder_mod=decoder_mod,
+                             dict_path=str(tools.DICT_PATH))["action_types"]
 
         # No orphan: everything gen2 emits exists in the dictionary.
         self.assertEqual(at["orphans_generator_handles_not_in_dict"], [])
