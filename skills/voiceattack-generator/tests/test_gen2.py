@@ -384,12 +384,18 @@ class PerActionEquivalenceTest(unittest.TestCase):
         self.assertIn("<Duration>0.1</Duration>", chunks[0])
 
     def test_mouse_move_with_click_duration(self):
-        # Finding 3: binary m[4] is read unconditionally, so Move records can carry a
-        # click duration — it must reach Duration alongside X/Y, never drop silently.
+        # Binary m[4] is read unconditionally, so Move records can carry a click
+        # duration. It must never drop SILENTLY — but it does drop: the W7 Export
+        # (a08f91a, 2026-07-14) DISPROVED the "Move duration -> Duration" carrier,
+        # so a Move emits Duration 0 and warns instead of writing a Duration VA
+        # ignores for movement. X/Y still survive.
         chunks, warnings = emit_chunks([rec(12, "MouseAction", contextCode="Move",
                                             x=333, y=444, clickDuration=0.1)])
-        self.assertEqual(warnings, [])
-        self.assertIn("<Duration>0.1</Duration>", chunks[0])
+        # Was assertEqual(warnings, []) — the disproved carrier now warns (a08f91a).
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("animated move", warnings[0])
+        # Was assertIn("<Duration>0.1</Duration>") — the duration is dropped, not carried.
+        self.assertIn("<Duration>0</Duration>", chunks[0])
         self.assertIn("<X>333</X>", chunks[0])
         self.assertIn("<Y>444</Y>", chunks[0])
 
@@ -411,8 +417,10 @@ class PerActionEquivalenceTest(unittest.TestCase):
             rec(3, "Launch", executablePath="C:\\probe\\launch-test.exe",
                 arguments="--a1 --a2", workingDirectory="C:\\probe\\wd")])
         self.assertEqual(chunks[0], LAUNCH_FRAGMENT)
-        # Inferred XML carrier: emitted WITH a warning (contract §2).
-        self.assertTrue(any("inferred" in w for w in warnings), warnings)
+        # Was assertTrue(any("inferred" in w ...)) — the W7 Export (a08f91a,
+        # 2026-07-14) CONFIRMED the Launch carriers, flipping the dictionary entry's
+        # xml_confidence from "inferred" to "solid", so emission no longer warns.
+        self.assertEqual(warnings, [])
 
     def test_launch_omits_absent_context23(self):
         chunks, _ = emit_chunks([rec(3, "Launch", executablePath="C:\\x.exe")])
@@ -558,9 +566,11 @@ class RefusalTest(unittest.TestCase):
         return xml.count("<Command>"), len(CHUNK_RE.findall(xml)), warnings
 
     def test_unwired_type_drops_action_only(self):
-        # SetClipboard: still row-3 (unwired) after the W5 row-2 wave.
+        # Was SetClipboard, which W6 (2897851, 2026-07-13) wired to close the audit's
+        # pending gate. ExecuteCommand is the standing row-3 stand-in: non-structural,
+        # DEFERRED_XML (by-GUID cross-ref), so it takes the action-level drop path.
         n_cmds, n_actions, warnings = self.emit_model(
-            [rec(24, "SetClipboard", text="y"), presskey()])
+            [rec(16, "ExecuteCommand"), presskey()])
         self.assertEqual((n_cmds, n_actions), (1, 1))
         self.assertEqual(len(warnings), 1)
         self.assertIn("not emit-wired", warnings[0])
@@ -1115,7 +1125,11 @@ class CliSmokeTest(unittest.TestCase):
         self.assertEqual((code, wrote), (0, True))
 
     def test_schema_error_exits_1_no_output(self):
-        code, wrote, err = self.run_cli({"name": "simple", "commands": []})
+        # Was {"name": "simple", "commands": []} — since the W7 cutover (37ccf91,
+        # 2026-07-14) the CLI auto-detects its door, and a doc with no
+        # "schema_version" key takes the SIMPLE door (exit 0, file written). The
+        # schema-door hard-fail contract this pins now needs a schema_version doc.
+        code, wrote, err = self.run_cli({"schema_version": 2, "commands": []})
         self.assertEqual((code, wrote), (1, False))
         self.assertIn("ERROR", err)
 
@@ -1125,8 +1139,10 @@ class CliSmokeTest(unittest.TestCase):
         self.assertIn("ERROR", err)
 
     def test_warnings_exit_2_with_output(self):
+        # Was SetClipboard, wired at W6 (2897851, 2026-07-13) and silent since.
+        # ExecuteCommand is still unwired, so it warns and the run exits 2.
         code, wrote, err = self.run_cli(
-            doc_for([rec(24, "SetClipboard", text="y"), presskey()]))
+            doc_for([rec(16, "ExecuteCommand"), presskey()]))
         self.assertEqual((code, wrote), (2, True))
         self.assertIn("WARNING", err)
 
@@ -1149,7 +1165,9 @@ class CliSmokeTest(unittest.TestCase):
     def test_warnings_printed_before_hard_fail(self):
         # W5 fix wave finding 4 (CLI half): warnings accumulated before a hard-fail
         # must reach stderr, not be swallowed with the exception.
-        doc = doc_for([rec(24, "SetClipboard", text="dropme"), presskey()])
+        # Was SetClipboard, wired at W6 (2897851, 2026-07-13) and silent since;
+        # ExecuteCommand is the still-unwired warning source.
+        doc = doc_for([rec(16, "ExecuteCommand"), presskey()])
         doc["commands"].append(
             {"id": "x", "phrase": "broken", "category": {"value": "g"},
              "actionCount": 1,
@@ -1157,7 +1175,7 @@ class CliSmokeTest(unittest.TestCase):
         code, wrote, err = self.run_cli(doc)
         self.assertEqual((code, wrote), (1, False))
         self.assertIn("WARNING", err)
-        self.assertIn("SetClipboard", err)
+        self.assertIn("ExecuteCommand", err)  # was "SetClipboard" (wired at W6)
         self.assertIn("ERROR", err)
 
     def test_non_utf8_input_exits_1_no_output(self):
@@ -1172,7 +1190,11 @@ class CliSmokeTest(unittest.TestCase):
                 code = cli_main([inp, out])
             self.assertEqual((code, os.path.exists(out)), (1, False))
             self.assertIn("ERROR", buf_err.getvalue())
-            self.assertIn("not UTF-8", buf_err.getvalue())
+            # Was assertIn("not UTF-8") — schema_input.load's wording. Since the W7
+            # cutover (37ccf91, 2026-07-14) the CLI opens the file itself to detect
+            # its door, so the UnicodeDecodeError is reported by cli.py's own
+            # handler. Still a DESIGNED failure (exit 1, no file, no traceback).
+            self.assertIn("utf-8", buf_err.getvalue())
 
     def test_non_utf8_load_raises_schema_error(self):
         with tempfile.TemporaryDirectory() as td:
