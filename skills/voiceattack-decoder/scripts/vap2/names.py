@@ -15,11 +15,38 @@ import os
 
 _DICT_PATH_ENV = "VAP_DICTIONARY_PATH"
 
+_DICT_FILENAME = "vap_capability_dictionary.json"
 
-def _default_dict_path():
+# The path load() actually resolved, or None until a load succeeds. It must survive the
+# import-time swallow at the foot of this module — the audit reads it to identity-check
+# the dictionary this package really uses (dictionary path fix plan, step 8b).
+RESOLVED_DICT_PATH = None
+
+
+class DictionaryNotFound(Exception):
+    """The name authority could not be located. Nothing this package decodes is
+    representable without it, so callers hard-fail; none may guess a name
+    (round-trip contract sec 1). gen2 defines its own — the two tools never
+    cross-import (architecture ruling 2026-07-12)."""
+
+
+def _candidate_dict_paths():
+    """The two layouts this package ships in, in precedence order.
+
+    1. Repo position — four hops up from vap2/, i.e. <repo>/schema/. Checked FIRST so
+       a copy landing inside the repo tree can never shadow the one dictionary the
+       generator and the audit read (Decision A).
+    2. In-package position — two hops up, i.e. <package root>/schema/. That is the
+       layout the dist artifacts already use; it is not a new invention.
+
+    Deliberately absent: os.getcwd() and any upward walk. Either would make decoded
+    output depend on where the caller stood.
+    """
     here = os.path.dirname(os.path.abspath(__file__))
-    root = os.path.abspath(os.path.join(here, "..", "..", "..", ".."))
-    return os.path.join(root, "schema", "vap_capability_dictionary.json")
+    repo_root = os.path.abspath(os.path.join(here, "..", "..", "..", ".."))
+    package_root = os.path.abspath(os.path.join(here, "..", ".."))
+    return [os.path.join(repo_root, "schema", _DICT_FILENAME),
+            os.path.join(package_root, "schema", _DICT_FILENAME)]
 
 
 class Dictionary:
@@ -115,19 +142,61 @@ class Dictionary:
         return self.vk_canonical.get(vk, "VK_%d" % vk)
 
 
+def _not_found_message(tried):
+    lines = ["cannot locate the VoiceAttack capability dictionary (%s)." % _DICT_FILENAME,
+             "Tried, in order:"]
+    lines += ["  %d. %s (%s)" % (i, path, label) for i, (label, path) in enumerate(tried, 1)]
+    lines.append("Set %s to the dictionary's full path, or place a copy at the in-package "
+                 "location <package root>/schema/%s — the layout the release artifacts use."
+                 % (_DICT_PATH_ENV, _DICT_FILENAME))
+    return "\n".join(lines)
+
+
 def load(path=None):
-    path = path or os.environ.get(_DICT_PATH_ENV) or _default_dict_path()
-    with open(path, "r", encoding="utf-8") as f:
-        return Dictionary(json.load(f))
+    """Load the name authority. Precedence: explicit `path=`, then $VAP_DICTIONARY_PATH,
+    then _candidate_dict_paths() in order.
+
+    An explicit path and a set-but-missing env var do NOT fall through to the candidates:
+    a typo'd override silently resolving to a *different* dictionary is exactly the
+    silent degradation this project forbids, so it raises DictionaryNotFound instead.
+    A candidate that exists but will not parse also raises rather than falling through.
+
+    Records the winning path in the module-level RESOLVED_DICT_PATH for the audit.
+    """
+    global RESOLVED_DICT_PATH
+    env = os.environ.get(_DICT_PATH_ENV)
+    if path is not None:
+        tried = [("explicit path argument", path)]
+    elif env:
+        tried = [("%s environment variable" % _DICT_PATH_ENV, env)]
+    else:
+        tried = list(zip(("repo position", "in-package position"), _candidate_dict_paths()))
+
+    for _, candidate in tried:
+        try:
+            f = open(candidate, "r", encoding="utf-8")
+        except OSError:
+            continue
+        with f:
+            raw = json.load(f)
+        RESOLVED_DICT_PATH = os.path.abspath(candidate)
+        return Dictionary(raw)
+
+    raise DictionaryNotFound(_not_found_message(tried))
 
 
 # --- audit-facing module tables (derived, never hand-edited) --------------------
-# Built at import so dictionary_tools.py audit can read them off this module.
+# Built at import so dictionary_tools.py audit can read them off this module. The
+# swallow is KEPT deliberately: the module must still import for load_tool_module() to
+# introspect it. It is no longer a hollow pass — empty tables and a None
+# RESOLVED_DICT_PATH now COUNT as audit failures (dictionary path fix plan, step 8),
+# so the "audit will surface it" claim below is finally true. RESOLVED_DICT_PATH is
+# never reset here: load() sets it only on success, so it stays None on failure.
 try:
     _DEFAULT = load()
     VK_CODES = {vk: name for vk, name in _DEFAULT.vk_upper.items()}
     CONTEXT_TO_GENERATOR = dict(_DEFAULT.mouse_name_by_code)
-except Exception:  # pragma: no cover - audit will surface a missing dictionary itself
+except Exception:  # pragma: no cover - the audit surfaces a missing dictionary (step 8)
     _DEFAULT = None
     VK_CODES = {}
     CONTEXT_TO_GENERATOR = {}
