@@ -1190,11 +1190,7 @@ class CliSmokeTest(unittest.TestCase):
                 code = cli_main([inp, out])
             self.assertEqual((code, os.path.exists(out)), (1, False))
             self.assertIn("ERROR", buf_err.getvalue())
-            # Was assertIn("not UTF-8") — schema_input.load's wording. Since the W7
-            # cutover (37ccf91, 2026-07-14) the CLI opens the file itself to detect
-            # its door, so the UnicodeDecodeError is reported by cli.py's own
-            # handler. Still a DESIGNED failure (exit 1, no file, no traceback).
-            self.assertIn("utf-8", buf_err.getvalue())
+            self.assertIn("not UTF-8", buf_err.getvalue())
 
     def test_non_utf8_load_raises_schema_error(self):
         with tempfile.TemporaryDirectory() as td:

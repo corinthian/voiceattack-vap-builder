@@ -54,7 +54,10 @@ def main(argv=None):
     except FileNotFoundError:
         print("ERROR: File not found: %s" % args.input, file=sys.stderr)
         return 1
-    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+    except UnicodeDecodeError as e:
+        print("ERROR: %s is not UTF-8 text: %s" % (args.input, e), file=sys.stderr)
+        return 1
+    except json.JSONDecodeError as e:
         print("ERROR: invalid JSON in %s: %s" % (args.input, e), file=sys.stderr)
         return 1
 
