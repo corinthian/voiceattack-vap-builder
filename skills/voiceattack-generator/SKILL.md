@@ -21,6 +21,30 @@ schema-v1.1 JSON (a decoder output). Run with `-h` for full usage; `--no-idiom` 
 overloaded-trigger auto-lowering. Exit codes: 0 clean, 1 hard-fail (no file written),
 2 written with warnings.
 
+### The capability dictionary
+
+Every key, mouse and action name the generator emits comes from
+`vap_capability_dictionary.json` — the single name authority. Nothing is representable
+without it, so a run that cannot find it exits 1 and writes no output file.
+
+Resolution order, first hit wins:
+
+1. An explicit path passed to `names.load(path=...)` (library use only).
+2. The `VAP_DICTIONARY_PATH` environment variable — the escape hatch. Point it at the
+   dictionary's full path when the skill lives somewhere the candidates below miss.
+3. `<repo root>/schema/vap_capability_dictionary.json`, for a copy sitting in the
+   source tree.
+4. `<skill dir>/schema/vap_capability_dictionary.json`, the in-package position — the
+   layout the release artifacts use.
+
+An explicit path or a set-but-missing `VAP_DICTIONARY_PATH` does **not** fall back to
+the remaining candidates: a typo'd override quietly resolving to a *different*
+dictionary would change what the generator emits without saying so. It fails instead,
+and the error lists every path it tried.
+
+Copying the skill folder on its own gives you neither candidate 3 nor 4 — install via
+`/plugin install`, or set `VAP_DICTIONARY_PATH`.
+
 > The legacy `scripts/vap_generator.py` is retained in-tree during soak but is no longer
 > the entry point — it cannot emit the newer action types (dictation/listening, clipboard,
 > the Set family). Always invoke `gen2`.
