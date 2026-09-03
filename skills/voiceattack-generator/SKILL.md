@@ -17,7 +17,7 @@ When the user wants to generate a VoiceAttack profile:
 4. Report the output file location and command count
 
 The generator auto-detects its input: the simple authoring format below, or normative
-schema-v1.1 JSON (a decoder output). Run with `-h` for full usage; `--no-idiom` disables
+schema-v1.2 JSON (a decoder output). Run with `-h` for full usage; `--no-idiom` disables
 overloaded-trigger auto-lowering. Exit codes: 0 clean, 1 hard-fail (no file written),
 2 written with warnings.
 

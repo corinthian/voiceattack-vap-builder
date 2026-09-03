@@ -9,14 +9,30 @@ VoiceAttack profile tools - accessibility utilities for creating and analyzing V
 1. **Generator**: JSON → VAP (create profiles from simple definitions)
 2. **Decoder**: Binary VAP → XML + JSON (reverse-engineer existing profiles)
 
-**Status:** 2.0.0 shipped on `main` (`039b7aa`). The **2.1 encoder line** is complete on `feature/generator-v2` (W0–W7 done) and staged for release. `gen2` (`skills/voiceattack-generator/scripts/gen2/`, stdlib-only, dictionary-driven) is now the **active generator** — its CLI (`python3 -m gen2`) auto-detects the simple authoring format vs schema-v1.2 JSON and is one emission pipeline; the overloaded-trigger idiom auto-lowers to a `{LASTSPOKENCMD}` dispatch chain (collision-checked by exhaustive utterance simulation). `vap_generator.py` is deprecated (soak-only, fewer types; still backs the audit's key/mouse tables). Emit coverage: keys/mouse/Pause/Say, SetDecimal/Write/conditionals, row-2 (TextSet/BooleanSet/IntSet/QuickInput), SetClipboard, Launch (carriers VA-confirmed), and the five parameterless dark types (dictation/listening) — all VA-import-verified, zero inference. Deferred to a future release: ExecuteCommand/KillCommand (by-GUID), PauseVariable/ExitCommand (decoder-parked), SoundFile (code 14, corrects bogus PlaySound=35), While-loops (D4), animated mouse-move (DecimalContext2 timing + steps/ease flags — W7 ground truth, not the old wrong `Duration` inference). The `decode(encode(decode(x)))==decode(x)` fixpoint is a live repo-level gate (`tests/integration/`). Decoder V2 (`scripts/vap2/`, stdlib-only object-walk) decodes binary and XML-form profiles into normative JSON (schema v1.2, frozen). The dictionary audit is gen2-aware + parked-aware (W6). Harness: 39 integration + 66 decoder + 108 gen2 + 86 lowering tests green as of 2026-08-20 — the gen2 suite had been RED on `main` since the W6/W7 waves (seven assertions stale against shipped behaviour), so any "harness green" claim dated before then covered the other suites only; dictionary 0.5.0 validate OK + audit exit 0; manifest 2.1.2. 2026-08-14 (silent update, no version bump by ruling): F-keys f13–f24 in the dictionary (f20–f24 solid via the CS2 VA export, f13–f19 inferred) and the variable-duration PressKey (`durationVariable` / authoring `duration_variable`: hold for {DEC:var} seconds; XML carriers Y=1 + ConditionSetName, schema v1.2) wired through decoder, gen2, and both fixpoint guards; 2026-08-15: both VA probes passed (varhold_test import round-trips the variable-duration emit + f13; binary re-exports confirm the carrier — m[12] Y flag, m[15] variable name) and the binary decode path now binds `durationVariable` too. 2.1.0 shipped and tagged; the 2.1.1 line (`fix/security-review`, PR #27) adds bounded container input/decompression, atomic output writes, and the decoder verbatim-transcription doc note. 2026-08-20 (dictionary path, manifest 2.1.2): both name loaders resolve the dictionary by a two-candidate search — repo position first (a copy in the source tree must never shadow the one dictionary the audit reads), then the in-package `<skill dir>/schema/` position the release artifacts use — with `VAP_DICTIONARY_PATH` still the escape hatch. An explicit path or a set-but-missing env var raises rather than falling through to a *different* dictionary, and each package carries its own `DictionaryNotFound` (no cross-imports). Rulings: dictionary identity is established by **content hash, not a version bump** (the 2026-08-14 no-bump ruling stands), enforced inside the audit and by the new `verify-copy` subcommand; the audit now always checks the LIVE v2 decoder — empty `VK_CODES`/`CONTEXT_TO_GENERATOR` and a dictionary-identity mismatch both count into `fail_count`, closing a gate that had been passing vacuously; both 2.1.0 zips are **deleted, not rebuilt** (broken under their own layout and carrying a drifted dictionary), and the 2.1.2 build is parked to a GitHub Actions pipeline, which owes an explicit file list, no `dictionary_tools.py` inside the packages, and `verify-copy` on the result. Until it lands, `dist/` is empty and the install routes are `/plugin install` and the env var.
+**Current state (2.1.2 line, `main`):**
+
+- `gen2` (`skills/voiceattack-generator/scripts/gen2/`, stdlib-only, dictionary-driven) is the generator. `python3 -m gen2` auto-detects the simple authoring format vs schema-v1.2 JSON. The overloaded-trigger idiom lowers to a `{LASTSPOKENCMD}` dispatch chain, collision-checked by exhaustive utterance simulation. `vap_generator.py` is deprecated, soak-only (still backs the audit's key/mouse tables).
+- Decoder V2 (`scripts/vap2/`, stdlib-only object-walk) decodes binary and XML profiles into normative JSON (schema v1.2, frozen — `docs/V2_JSON_Schema.md`). `decode(encode(decode(x))) == decode(x)` is a repo-level gate in `tests/integration/`.
+- Emit coverage: keys/mouse/Pause/Say, SetDecimal/Write/conditionals, TextSet/BooleanSet/IntSet/QuickInput, SetClipboard, Launch, the five parameterless dictation/listening types, f13–f24, and variable-duration PressKey (`durationVariable`; XML `Y=1` + `ConditionSetName`, binary `m[12]`/`m[15]`). All VoiceAttack-import-verified.
+- Deferred: ExecuteCommand/KillCommand (by-GUID), PauseVariable/ExitCommand, SoundFile (code 14; PlaySound=35 is wrong), While-loops, animated mouse-move (DecimalContext2 timing + steps/ease flags).
+- Dictionary 0.5.0. Both name loaders resolve it by a two-candidate search (repo position first, then `<skill dir>/schema/`), with `VAP_DICTIONARY_PATH` as the escape hatch. An explicit path or a set-but-missing env var raises; it never falls through to a different dictionary. Each package carries its own `DictionaryNotFound`.
+- Container input and decompression are bounded, and output writes are atomic (2.1.1 security line). Do not relax either.
+
+**Rulings that bind:**
+
+- Dictionary identity is the content hash, not a version bump. The audit and `verify-copy` enforce it.
+- Repo position is searched first so that a copy sitting in the source tree can never shadow the one dictionary the audit reads. Do not reorder the candidates.
+- Each package defines its own `DictionaryNotFound` — no cross-imports between the generator and decoder packages.
+- The audit always checks the live v2 decoder; empty `VK_CODES`/`CONTEXT_TO_GENERATOR` or a dictionary-identity mismatch counts into `fail_count`.
+- There is no `dist/` — no build artefacts until the GitHub Actions build lands (explicit file list, no `dictionary_tools.py` inside the packages, `verify-copy` on the result). Install routes until then: `/plugin install` or `VAP_DICTIONARY_PATH`.
+- Harness: 39 integration + 66 decoder + 108 gen2 + 86 lowering tests must be green before any "harness green" claim.
 
 ## Commands
 
 ```bash
 # Generate VAP from JSON (gen2 is the active generator as of 2.1; run from scripts/)
 cd skills/voiceattack-generator/scripts && python3 -m gen2 input.json output.vap
-# Auto-detects simple authoring format vs schema-v1.1 JSON; --no-idiom disables idiom lowering.
+# Auto-detects simple authoring format vs schema-v1.2 JSON; --no-idiom disables idiom lowering.
 # Legacy (deprecated, soak-only, fewer action types): python3 skills/voiceattack-generator/scripts/vap_generator.py input.json output.vap
 
 # Decode binary VAP — V2 (object-walk; normative JSON, gated XML with --xml)
@@ -118,10 +134,12 @@ Separator: 108  Subtract: 109  Decimal: 110  Divide: 111
 - `skills/voiceattack-decoder/` - Binary VAP to XML decoder (standalone tool, NOT in manifest)
 
 **Key Files:**
-- `skills/voiceattack-generator/scripts/vap_generator.py` - Generator script
+- `skills/voiceattack-generator/scripts/gen2/` - Generator (`python3 -m gen2`); `vap_generator.py` beside it is deprecated, soak-only
 - `skills/voiceattack-generator/SKILL.md` - Skill instructions (includes screenshot workflow)
-- `skills/voiceattack-decoder/scripts/vap_decoder.py` - Decoder script
+- `skills/voiceattack-decoder/scripts/vap2/` - Decoder (`python3 -m vap2`); `vap_decoder.py` is the v1 flat scan, retained during soak
+- `schema/vap_capability_dictionary.json` - the single name authority (0.5.0)
 - `skills/voiceattack-decoder/docs/VAP_Format_Specification.md` - Binary format specification (v0.2, authoritative)
+- `skills/voiceattack-decoder/docs/V2_JSON_Schema.md` - normative JSON contract (v1.2, frozen)
 
 ## Directory Structure
 
@@ -133,7 +151,7 @@ Separator: 108  Subtract: 109  Decimal: 110  Divide: 111
 
 **Rules:**
 - Never write generated profiles to `reference profiles/` - that's for source VAPs only
-- Before replacing any file in `reference profiles/`, copy the old one to `reference profiles/Archive/<name> <YYYY-MM-DD>.vap` (date = the old file's mtime). The directory is gitignored - the archive is the only history (adopted 2026-08-14 after the July-12 CS2 export was overwritten and had to be recovered from Time Machine)
+- Before replacing any file in `reference profiles/`, copy the old one to `reference profiles/Archive/<name> <YYYY-MM-DD>.vap` (date = the old file's mtime). The directory is gitignored - the archive is the only history
 - All screenshots go in `Screenshots/`
 - All test/generated output goes in `output files/`
 
@@ -225,12 +243,13 @@ Press multiple keys simultaneously using a single PressKey with left/right modif
 
 ## Testing Workflow
 
-1. Generate: `python3 skills/voiceattack-generator/scripts/vap_generator.py input.json output.vap`
+1. Generate (from `skills/voiceattack-generator/scripts`): `python3 -m gen2 input.json output.vap`
 2. Validate XML: `xmllint --noout output.vap`
-3. Import into VoiceAttack: File → Import Profile
-4. Test commands execute proper actions
-
-No automated tests - validation is manual import into VoiceAttack.
+3. Run the harness, from the repo root:
+   - `python3 -m unittest discover -s tests/integration` (39, fixpoint gate)
+   - `python3 -m unittest discover -s skills/voiceattack-decoder/tests` (66)
+   - `python3 -m unittest discover -s skills/voiceattack-generator/tests` (194 = gen2 108 + lowering 86)
+4. Import into VoiceAttack (File → Import Profile) and exercise the commands — the import is the only proof a carrier is right.
 
 ## Screenshot Workflow
 
